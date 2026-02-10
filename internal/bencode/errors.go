@@ -16,4 +16,5 @@ var (
 	missing_dict_term_err  = errors.New("dictionary terminator not found")
 	non_str_key_err        = errors.New("key to dictionary value not a string")
 	duplicate_key_err      = errors.New("key to dictionary value already exists")
+	non_sorted_keys_err    = errors.New("keys in the dictionary aren't sorted lexicographically")
 )

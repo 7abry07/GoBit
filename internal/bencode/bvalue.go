@@ -1,16 +1,12 @@
 package bencode
 
-import (
-	"errors"
-)
-
 type nodeKind int
 
 const (
-	IntType nodeKind = iota
-	StrType
-	ListType
-	DictType
+	Int_t nodeKind = iota
+	Str_t
+	List_t
+	Dict_t
 )
 
 type BInt int
@@ -28,82 +24,73 @@ type BNode struct {
 
 func NewInt(input BInt) BNode {
 	return BNode{
-		kind: IntType,
+		kind: Int_t,
 		_int: input,
 	}
 }
 
 func NewStr(input BStr) BNode {
 	return BNode{
-		kind: StrType,
+		kind: Str_t,
 		_str: input,
 	}
 }
 
 func NewList(input BList) BNode {
 	return BNode{
-		kind:  ListType,
+		kind:  List_t,
 		_list: input,
 	}
 }
 
 func NewEmptyList() BNode {
 	return BNode{
-		kind:  ListType,
+		kind:  List_t,
 		_list: BList{},
 	}
 }
 
 func NewDict(input BDict) BNode {
 	return BNode{
-		kind:  DictType,
+		kind:  Dict_t,
 		_dict: input,
 	}
 }
 
 func NewEmptyDict() BNode {
 	return BNode{
-		kind:  DictType,
+		kind:  Dict_t,
 		_dict: make(BDict),
 	}
 }
 
-func (n BNode) IsInt() bool {
-	return n.kind == IntType
-}
-func (n BNode) IsStr() bool {
-	return n.kind == StrType
-}
-func (n BNode) IsList() bool {
-	return n.kind == ListType
-}
-func (n BNode) IsDict() bool {
-	return n.kind == DictType
+func (n BNode) Type() nodeKind {
+	return n.kind
 }
 
-func (n BNode) Str() (BStr, error) {
-	if n.kind == StrType {
-		return n._str, nil
+func (n BNode) Str() (BStr, bool) {
+	if n.kind == Str_t {
+		return n._str, true
 	}
-	return "", errors.New("not string")
+	return "", false
 }
-func (n BNode) Int() (BInt, error) {
-	if n.kind == IntType {
-		return n._int, nil
+func (n BNode) Int() (BInt, bool) {
+	if n.kind == Int_t {
+		return n._int, true
 	}
-	return 0, errors.New("not int")
+	return 0, false
 }
-func (n BNode) List() (BList, error) {
-	if n.kind == ListType {
-		return n._list, nil
+func (n BNode) List() (BList, bool) {
+	if n.kind == List_t {
+		return n._list, true
 	}
-	return []BNode{}, errors.New("not list")
+	return []BNode{}, false
 }
-func (n BNode) Dict() (BDict, error) {
-	if n.kind == DictType {
-		return n._dict, nil
+func (n BNode) Dict() (BDict, bool) {
+	if n.kind == Dict_t {
+		return n._dict, true
 	}
-	return map[string]BNode{}, errors.New("not dict")
+	return map[string]BNode{}, false
 }
 
 func (d BDict) FindIntOrDef(k string, def BInt) (BInt, bool) {
@@ -112,8 +99,8 @@ func (d BDict) FindIntOrDef(k string, def BInt) (BInt, bool) {
 		return def, false
 	}
 
-	value, valueErr := node.Int()
-	if valueErr != nil {
+	value, ok := node.Int()
+	if !ok {
 		return def, false
 	}
 
@@ -126,8 +113,8 @@ func (d BDict) FindInt(k string) (BInt, bool) {
 		return 0, false
 	}
 
-	value, valueErr := node.Int()
-	if valueErr != nil {
+	value, ok := node.Int()
+	if !ok {
 		return 0, false
 	}
 
@@ -140,8 +127,8 @@ func (d BDict) FindStrOrDef(k string, def BStr) (BStr, bool) {
 		return def, false
 	}
 
-	value, valueErr := node.Str()
-	if valueErr != nil {
+	value, ok := node.Str()
+	if !ok {
 		return def, false
 	}
 
@@ -154,8 +141,8 @@ func (d BDict) FindStr(k string) (BStr, bool) {
 		return "", false
 	}
 
-	value, valueErr := node.Str()
-	if valueErr != nil {
+	value, ok := node.Str()
+	if !ok {
 		return "", false
 	}
 
@@ -168,8 +155,8 @@ func (d BDict) FindList(k string) (BList, bool) {
 		return BList{}, false
 	}
 
-	value, valueErr := node.List()
-	if valueErr != nil {
+	value, ok := node.List()
+	if !ok {
 		return BList{}, false
 	}
 
@@ -182,8 +169,8 @@ func (d BDict) FindDict(k string) (BDict, bool) {
 		return BDict{}, false
 	}
 
-	value, valueErr := node.Dict()
-	if valueErr != nil {
+	value, ok := node.Dict()
+	if !ok {
 		return BDict{}, false
 	}
 

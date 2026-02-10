@@ -2,19 +2,23 @@ package bencode
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
 func Encode(n BNode) string {
 	var result strings.Builder
-	if n.IsInt() {
+	switch n.kind {
+
+	case Int_t:
 		result.WriteString(encodeInt(n._int))
-	} else if n.IsStr() {
+	case Str_t:
 		result.WriteString(encodeStr(n._str))
-	} else if n.IsList() {
+	case List_t:
 		result.WriteString(encodeList(n._list))
-	} else if n.IsDict() {
+	case Dict_t:
 		result.WriteString((encodeDict(n._dict)))
+
 	}
 	return result.String()
 }
@@ -40,9 +44,16 @@ func encodeList(l BList) string {
 func encodeDict(d BDict) string {
 	var result strings.Builder
 	result.WriteRune('d')
-	for k, v := range d {
+
+	keys := make([]string, 0, len(d))
+	for k := range d {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
 		result.WriteString(encodeStr(BStr(k)))
-		result.WriteString(Encode(v))
+		result.WriteString(Encode(d[k]))
 	}
 	result.WriteRune('e')
 	return result.String()

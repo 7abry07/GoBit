@@ -5,7 +5,9 @@ import (
 	"strings"
 )
 
-func Decode(input string, maxDepth int) (BNode, error) {
+const maxDepth = 10000
+
+func Decode(input string) (BNode, error) {
 	depth := 0
 	value, err := decode(&input, &depth, maxDepth)
 	if err != nil {
@@ -150,6 +152,9 @@ func decodeDict(input *string, depth *int, maxDepth int) (BDict, error) {
 	node := NewEmptyDict()
 	dict, _ := node.Dict()
 
+	previousKey := ""
+	first := true
+
 	for {
 		if len(*input) == 0 {
 			return BDict{}, missing_dict_term_err
@@ -164,9 +169,12 @@ func decodeDict(input *string, depth *int, maxDepth int) (BDict, error) {
 			return BDict{}, err
 		}
 
-		key, err := keyNode.Str()
-		if err != nil {
+		key, ok := keyNode.Str()
+		if !ok {
 			return BDict{}, non_str_key_err
+		}
+		if key < BStr(previousKey) && !first {
+			return BDict{}, non_sorted_keys_err
 		}
 
 		val, err := decode(input, depth, maxDepth)
@@ -174,8 +182,8 @@ func decodeDict(input *string, depth *int, maxDepth int) (BDict, error) {
 			return BDict{}, err
 		}
 
-		_, ok := dict[string(key)]
-		if ok {
+		_, exists := dict[string(key)]
+		if exists {
 			return BDict{}, duplicate_key_err
 		}
 		dict[string(key)] = val
