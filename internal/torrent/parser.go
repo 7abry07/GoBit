@@ -20,7 +20,7 @@ type fileinfo struct {
 	path   string
 }
 
-type TFile struct {
+type File struct {
 	Announce    string
 	Name        string
 	Pieces      []byte
@@ -37,57 +37,57 @@ type TFile struct {
 	Length       *uint64
 }
 
-func (f TFile) FileMode() fileMode {
+func (f File) FileMode() fileMode {
 	if f.Files == nil {
 		return single
 	}
 	return multi
 }
 
-func ParseFile(path string) (TFile, error) {
+func ParseFile(path string) (File, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return TFile{}, err
+		return File{}, err
 	}
 	file, err := Parse(string(content))
 	if err != nil {
-		return TFile{}, err
+		return File{}, err
 	}
 	return file, nil
 }
 
-func Parse(input string) (TFile, error) {
+func Parse(input string) (File, error) {
 	decoded, err := bencode.Decode(input)
 	if err != nil {
-		return TFile{}, err
+		return File{}, err
 	}
-	var f TFile
+	var f File
 
 	root, ok := decoded.Dict()
 	if !ok {
-		return TFile{}, root_not_dict_err
+		return File{}, root_not_dict_err
 	}
 
 	info, ok := root.FindDict("info")
 	if !ok {
-		return TFile{}, missing_info_err
+		return File{}, missing_info_err
 	}
 
 	announce, ok := root.FindStr("announce")
 	if !ok {
-		return TFile{}, missing_announce_err
+		return File{}, missing_announce_err
 	}
 	name, ok := info.FindStr("name")
 	if !ok {
-		return TFile{}, missing_name_err
+		return File{}, missing_name_err
 	}
 	pieces, ok := info.FindStr("pieces")
 	if !ok {
-		return TFile{}, missing_pieces_err
+		return File{}, missing_pieces_err
 	}
 	pieceLen, ok := info.FindInt("piece length")
 	if !ok {
-		return TFile{}, missing_piecelen_err
+		return File{}, missing_piecelen_err
 	}
 
 	comment, commentOk := root.FindStr("comment")
@@ -100,10 +100,10 @@ func Parse(input string) (TFile, error) {
 	length, lengthOk := info.FindInt("length")
 	files, filesresOk := parseFiles(info)
 	if lengthOk && filesresOk {
-		return TFile{}, both_length_files_present_err
+		return File{}, both_length_files_present_err
 	}
 	if !lengthOk && !filesresOk {
-		return TFile{}, both_length_files_missing_err
+		return File{}, both_length_files_missing_err
 	}
 
 	f.Announce = string(announce)

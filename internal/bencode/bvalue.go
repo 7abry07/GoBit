@@ -93,9 +93,17 @@ func (n BNode) Dict() (BDict, bool) {
 	return map[string]BNode{}, false
 }
 
+func (d BDict) Find(k string) (BNode, bool) {
+	node, exists := d[k]
+	if !exists {
+		return BNode{}, false
+	}
+	return node, true
+}
+
 func (d BDict) FindIntOrDef(k string, def BInt) (BInt, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return def, false
 	}
 
@@ -109,7 +117,7 @@ func (d BDict) FindIntOrDef(k string, def BInt) (BInt, bool) {
 
 func (d BDict) FindInt(k string) (BInt, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return 0, false
 	}
 
@@ -123,7 +131,7 @@ func (d BDict) FindInt(k string) (BInt, bool) {
 
 func (d BDict) FindStrOrDef(k string, def BStr) (BStr, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return def, false
 	}
 
@@ -137,7 +145,7 @@ func (d BDict) FindStrOrDef(k string, def BStr) (BStr, bool) {
 
 func (d BDict) FindStr(k string) (BStr, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return "", false
 	}
 
@@ -151,7 +159,7 @@ func (d BDict) FindStr(k string) (BStr, bool) {
 
 func (d BDict) FindList(k string) (BList, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return BList{}, false
 	}
 
@@ -165,7 +173,7 @@ func (d BDict) FindList(k string) (BList, bool) {
 
 func (d BDict) FindDict(k string) (BDict, bool) {
 	node, exists := d[k]
-	if exists == false {
+	if !exists {
 		return BDict{}, false
 	}
 
