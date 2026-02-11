@@ -1,6 +1,8 @@
 alias r := run
 alias b := build
 alias d := debug
+alias t := test
+alias ta := testall
 
 @run:
     go run cmd/app/main.go
@@ -10,3 +12,9 @@ alias d := debug
 
 @debug:
     gdlv run cmd/app/main.go
+
+@test target:
+    go test internal/tests/{{ target }}/{{ target }}_test.go
+
+@testall:
+    just test bencode
