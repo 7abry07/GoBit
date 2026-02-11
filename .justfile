@@ -13,8 +13,16 @@ alias ta := testall
 @debug:
     gdlv run cmd/app/main.go
 
-@test target:
-    go test internal/tests/{{ target }}/{{ target }}_test.go
+@test target flags="":
+    go test {{ flags }} internal/tests/{{ target }}/{{ target }}_test.go
 
-@testall:
-    just test bencode
+@testall flags="":
+    echo "BENCODE TEST SUITE"
+    echo "--------------------------"
+    just test bencode {{ flags }}
+    echo "--------------------------"
+    echo ""
+    echo "TORRENT TEST SUITE"
+    echo "--------------------------"
+    just test torrent {{ flags }}
+    echo "--------------------------"

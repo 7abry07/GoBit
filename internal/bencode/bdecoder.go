@@ -52,6 +52,7 @@ func decode(input *string, depth *int) (BNode, error) {
 	case '9':
 		{
 			val, err := decodeStr(input)
+			*depth--
 			if err != nil {
 				return BNode{}, err
 			}
@@ -60,6 +61,7 @@ func decode(input *string, depth *int) (BNode, error) {
 	case 'i':
 		{
 			val, err := decodeInt(input)
+			*depth--
 			if err != nil {
 				return BNode{}, err
 			}

@@ -16,8 +16,8 @@ const (
 )
 
 type fileinfo struct {
-	length uint64
-	path   string
+	Length uint64
+	Path   string
 }
 
 type File struct {
@@ -65,29 +65,29 @@ func Parse(input string) (File, error) {
 
 	root, ok := decoded.Dict()
 	if !ok {
-		return File{}, root_not_dict_err
+		return File{}, Root_not_dict_err
 	}
 
 	info, ok := root.FindDict("info")
 	if !ok {
-		return File{}, missing_info_err
+		return File{}, Missing_info_err
 	}
 
 	announce, ok := root.FindStr("announce")
 	if !ok {
-		return File{}, missing_announce_err
+		return File{}, Missing_announce_err
 	}
 	name, ok := info.FindStr("name")
 	if !ok {
-		return File{}, missing_name_err
+		return File{}, Missing_name_err
 	}
 	pieces, ok := info.FindStr("pieces")
 	if !ok {
-		return File{}, missing_pieces_err
+		return File{}, Missing_pieces_err
 	}
 	pieceLen, ok := info.FindInt("piece length")
 	if !ok {
-		return File{}, missing_piecelen_err
+		return File{}, Missing_piecelen_err
 	}
 
 	comment, commentOk := root.FindStr("comment")
@@ -100,10 +100,10 @@ func Parse(input string) (File, error) {
 	length, lengthOk := info.FindInt("length")
 	files, filesresOk := parseFiles(info)
 	if lengthOk && filesresOk {
-		return File{}, both_length_files_present_err
+		return File{}, Both_length_files_present_err
 	}
 	if !lengthOk && !filesresOk {
-		return File{}, both_length_files_missing_err
+		return File{}, Both_length_files_missing_err
 	}
 
 	f.Announce = string(announce)
@@ -215,5 +215,5 @@ func parseFilesItem(fileval bencode.BDict) (fileinfo, bool) {
 		path.WriteString(string(strval))
 	}
 
-	return fileinfo{path: path.String(), length: uint64(length)}, true
+	return fileinfo{Path: path.String(), Length: uint64(length)}, true
 }
