@@ -14,8 +14,8 @@ func TestValidTorrent(t *testing.T) {
 		return
 	}
 
-	if file.Announce != "http://nyaa.tracker.wf:7777/announce" {
-		t.Errorf("'announce' expected: [%v], | got: [%v]", "nyaa.tracker.wf:7777/announce", file.Announce)
+	if file.Announce.String() != "http://nyaa.tracker.wf:7777/announce" {
+		t.Errorf("'announce' expected: [%v], | got: [%v]", "nyaa.tracker.wf:7777/announce", file.Announce.String())
 	}
 
 	if file.Name != "[Sotark] Naruto Shippuden [480p][720p][HEVC][x265][Dual-Audio]" {
@@ -72,7 +72,7 @@ func TestValidTorrent(t *testing.T) {
 		t.Errorf("'announce list' expected: [%v], | got: [%v]", 1, len(*file.AnnounceList))
 	}
 
-	if (*file.AnnounceList)[0][0] != "http://nyaa.tracker.wf:7777/announce" {
-		t.Errorf("'announce list' expected: [%v][%v], | got: [%v]", 0, "http://nyaa.tracker.wf:7777/announce", (*file.AnnounceList)[0][0])
+	if (*file.AnnounceList)[0][0].String() != "http://nyaa.tracker.wf:7777/announce" {
+		t.Errorf("'announce list' expected: [%v][%v], | got: [%v]", 0, "http://nyaa.tracker.wf:7777/announce", (*file.AnnounceList)[0][0].String())
 	}
 }

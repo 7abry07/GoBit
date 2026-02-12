@@ -17,6 +17,7 @@ func main() {
 
 	req.PeerID = [20]byte{}
 	req.Infohash = file.InfoHash
+	req.Event = tracker.Started
 	req.Url = file.Announce
 
 	go man.Send(req)
