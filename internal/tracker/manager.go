@@ -3,7 +3,6 @@ package tracker
 import (
 	"io"
 	"net/http"
-	"net/url"
 )
 
 type result struct {
@@ -12,8 +11,7 @@ type result struct {
 }
 
 type manager struct {
-	httpUrls map[url.URL]string
-	results  chan<- result
+	results chan<- result
 }
 
 func NewManager() (*manager, <-chan result) {
@@ -48,11 +46,6 @@ func (m *manager) Send(req Request) {
 }
 
 func (m *manager) sendHttp(req Request) (Response, error) {
-	_, exists := m.httpUrls[req.Url]
-	if exists {
-		req.TrackerID = m.httpUrls[req.Url]
-	}
-
 	trackerUrl, err := req.EncodeHttp()
 	if err != nil {
 		return Response{}, err
@@ -67,6 +60,7 @@ func (m *manager) sendHttp(req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
+
 	resp, err := ParseHttp(content, req)
 	if err != nil {
 		return Response{}, err

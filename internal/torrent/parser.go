@@ -29,7 +29,7 @@ type File struct {
 	PieceLength uint64
 	Private     bool
 
-	AnnounceList *[][]string
+	AnnounceList *[][]url.URL
 	Comment      *string
 	CreatedBy    *string
 	Encoding     *string
@@ -161,24 +161,28 @@ func Parse(input string) (File, error) {
 	return f, nil
 }
 
-func parseAnnounceList(info bencode.BDict) ([][]string, bool) {
-	result := [][]string{}
+func parseAnnounceList(info bencode.BDict) ([][]url.URL, bool) {
+	result := [][]url.URL{}
 	announceList, ok := info.FindList("announce-list")
 	if !ok {
-		return [][]string{}, false
+		return [][]url.URL{}, false
 	}
 	for _, lstnode := range announceList {
 		lst, ok := lstnode.List()
 		if !ok {
-			return [][]string{}, false
+			return [][]url.URL{}, false
 		}
-		resultLst := []string{}
+		resultLst := []url.URL{}
 		for _, strnode := range lst {
 			str, ok := strnode.Str()
 			if !ok {
-				return [][]string{}, false
+				return [][]url.URL{}, false
 			}
-			resultLst = append(resultLst, string(str))
+			ann, err := url.Parse(string(str))
+			if err != nil {
+				return [][]url.URL{}, false
+			}
+			resultLst = append(resultLst, *ann)
 		}
 		result = append(result, resultLst)
 	}
