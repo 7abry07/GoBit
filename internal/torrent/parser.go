@@ -3,6 +3,7 @@ package torrent
 import (
 	"GoBit/internal/bencode"
 	"crypto/sha1"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ type fileinfo struct {
 }
 
 type File struct {
-	Announce    string
+	Announce    url.URL
 	Name        string
 	Pieces      []byte
 	InfoHash    [20]byte
@@ -73,10 +74,15 @@ func Parse(input string) (File, error) {
 		return File{}, Missing_info_err
 	}
 
-	announce, ok := root.FindStr("announce")
+	announceVal, ok := root.FindStr("announce")
 	if !ok {
 		return File{}, Missing_announce_err
 	}
+	announce, err := url.Parse(string(announceVal))
+	if err != nil {
+		return File{}, Invalid_announce_err
+	}
+
 	name, ok := info.FindStr("name")
 	if !ok {
 		return File{}, Missing_name_err
@@ -106,7 +112,7 @@ func Parse(input string) (File, error) {
 		return File{}, Both_length_files_missing_err
 	}
 
-	f.Announce = string(announce)
+	f.Announce = *announce
 	f.Name = string(name)
 	f.Pieces = []byte(pieces)
 	f.PieceLength = uint64(pieceLen)
