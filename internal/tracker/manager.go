@@ -25,45 +25,40 @@ func (m *manager) Send(req Request) {
 	switch req.Url.Scheme {
 	case "http":
 		{
-			resp, err := m.sendHttp(req)
+			trackerUrl, err := req.EncodeHttp()
 			if err != nil {
 				m.results <- result{err, Response{}}
 				return
 			}
+
+			httpResp, err := http.Get(trackerUrl.String())
+			if err != nil {
+				m.results <- result{err, Response{}}
+				return
+			}
+
+			content, err := io.ReadAll(httpResp.Body)
+			if err != nil {
+				m.results <- result{err, Response{}}
+				return
+			}
+
+			resp, err := ParseHttp(content, req)
+			if err != nil {
+				m.results <- result{err, Response{}}
+				return
+			}
+
 			m.results <- result{nil, resp}
-			return
 		}
 	case "udp":
 		{
 			// TODO
+			m.results <- result{invalid_scheme_err, Response{}}
 		}
-		fallthrough
 	default:
 		{
 			m.results <- result{invalid_scheme_err, Response{}}
 		}
 	}
-}
-
-func (m *manager) sendHttp(req Request) (Response, error) {
-	trackerUrl, err := req.EncodeHttp()
-	if err != nil {
-		return Response{}, err
-	}
-
-	httpResp, err := http.Get(trackerUrl.String())
-	if err != nil {
-		return Response{}, err
-	}
-
-	content, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return Response{}, err
-	}
-
-	resp, err := ParseHttp(content, req)
-	if err != nil {
-		return Response{}, err
-	}
-	return resp, nil
 }

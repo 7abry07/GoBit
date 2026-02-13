@@ -31,9 +31,10 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 	}
 
 	interval, _ := root.FindIntOrDef("interval", 1800)
-	resp.Interval = uint32(interval)
 	minInterval, _ := root.FindIntOrDef("min interval", 30)
+	resp.Interval = uint32(interval)
 	resp.MinInterval = uint32(minInterval)
+
 	warning, warningOk := root.FindStr("warning reason")
 	if warningOk {
 		str := string(warning)
@@ -63,10 +64,10 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 		complete, _ := file.FindIntOrDef("complete", -1)
 		incomplete, _ := file.FindIntOrDef("incomplete", -1)
 		downloaded, _ := file.FindIntOrDef("downloaded", -1)
-
 		resp.Complete = int64(complete)
 		resp.Incomplete = int64(incomplete)
 		resp.Downloaded = int64(downloaded)
+
 		return resp, nil
 	}
 	complete, _ := root.FindIntOrDef("complete", -1)
