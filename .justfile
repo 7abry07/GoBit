@@ -26,3 +26,8 @@ alias ta := testall
     echo "--------------------------"
     just test torrent {{ flags }}
     echo "--------------------------"
+    echo ""
+    echo "TRACKER TEST SUITE"
+    echo "--------------------------"
+    just test tracker {{ flags }}
+    echo "--------------------------"
