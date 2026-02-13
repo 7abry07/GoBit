@@ -2,8 +2,64 @@ package tracker_test
 
 import (
 	"GoBit/internal/tracker"
+	"net/netip"
+	"net/url"
 	"testing"
 )
+
+func TestHttpAnnounceRequest(t *testing.T) {
+	req := tracker.Request{}
+
+	req.Downloaded = 1
+	req.Uploaded = 1
+	req.Event = tracker.None
+	req.Infohash =
+		[20]byte{
+			0xde, 0x2f, 0xee, 0x7c, 0xd8,
+			0xf3, 0x25, 0x14, 0xdc, 0x13,
+			0x8b, 0x4c, 0xdd, 0x53, 0xc9,
+			0x3d, 0x7d, 0x7a, 0x1e, 0xb6,
+		}
+
+	req.Key = 0
+	req.NoPID = 1
+	req.PeerID =
+		[20]byte{
+			0x7a, 0x1c, 0xe4, 0x92, 0x3f,
+			0xb8, 0x0d, 0x6e, 0x55, 0xa3,
+			0xdf, 0x21, 0x9b, 0x44, 0x78,
+			0xcc, 0x02, 0xf1, 0x6d, 0x90,
+		}
+	req.TrackerID = "hello"
+	req.Compact = 1
+	req.Ip, _ = netip.ParseAddr("255.255.255.255")
+	u, _ := url.Parse("http://hello:7777/announce")
+	req.Url = *u
+	req.Kind = tracker.Announce
+	req.Port = 6881
+	req.Left = 4000
+
+	fullUrl, err := req.EncodeHttp()
+	if err != nil {
+		t.Errorf("unexpected error -> %v", err.Error())
+	}
+
+	if fullUrl.Scheme != "http" {
+		t.Errorf("'scheme' expected: %v | got: %v", "http", fullUrl.Scheme)
+	}
+
+	if fullUrl.Host != "hello:7777" {
+		t.Errorf("'host' expected: %v | got: %v", "hello:7777", fullUrl.Host)
+	}
+
+	if fullUrl.Path != "/announce" {
+		t.Errorf("'path' expected: %v | got: %v", "/announce", fullUrl.Path)
+	}
+
+	if fullUrl.Query().Get("info_hash") != "\xde\x2f\xee\x7c\xd8\xf3\x25\x14\xdc\x13\x8b\x4c\xdd\x53\xc9\x3d\x7d\x7a\x1e\xb6" {
+		t.Errorf("'info_hash' expected: %v | got: %v", "\xde\x2f\xee\x7c\xd8\xf3\x25\x14\xdc\x13\x8b\x4c\xdd\x53\xc9\x3d\x7d\x7a\x1e\xb6", fullUrl.Query().Get("info_hash"))
+	}
+}
 
 func TestHttpAnnounceResponse(t *testing.T) {
 	req := tracker.Request{}
@@ -44,13 +100,19 @@ func TestHttpAnnounceResponse(t *testing.T) {
 func TestHttpScrapeResponse(t *testing.T) {
 	req := tracker.Request{}
 	resp := "d5:files" +
-		"d20:\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+		"d20:\xde\x2f\xee\x7c\xd8\xf3\x25\x14\xdc\x13\x8b\x4c\xdd\x53\xc9\x3d\x7d\x7a\x1e\xb6" +
 		"d8:completei0e" +
 		"10:downloadedi0e" +
 		"10:incompletei0eeee"
 
 	req.Kind = tracker.Scrape
-	req.Infohash = [20]byte{0}
+	req.Infohash =
+		[20]byte{
+			0xde, 0x2f, 0xee, 0x7c, 0xd8,
+			0xf3, 0x25, 0x14, 0xdc, 0x13,
+			0x8b, 0x4c, 0xdd, 0x53, 0xc9,
+			0x3d, 0x7d, 0x7a, 0x1e, 0xb6,
+		}
 
 	parsed, err := tracker.ParseHttp([]byte(resp), req)
 	if err != nil {
@@ -78,7 +140,7 @@ func TestBencodedPeers(t *testing.T) {
 		"8:intervali0e" +
 		"12:min intervali0e" +
 		"5:peersld2:ip15:255.255.255.255" +
-		"7:peer id20:\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+		"7:peer id20:\x7a\x1c\xe4\x92\x3f\xb8\x0d\x6e\x55\xa3\xdf\x21\x9b\x44\x78\xcc\x02\xf1\x6d\x90" +
 		"4:porti65535eeee"
 
 	req.Kind = tracker.Announce
@@ -92,7 +154,11 @@ func TestBencodedPeers(t *testing.T) {
 		t.Errorf("'peer ip:port' expected: <%v>[%v] | got: <%v>[%v]", "255.255.255.255", 65535, parsed.PeerList[0].IpPort.Addr(), parsed.PeerList[0].IpPort.Port())
 	}
 
-	if parsed.PeerList[0].PeerID != [20]byte{0} {
-		t.Errorf("'peer id' expected: %v | got: %x", "00000000000000000000", parsed.PeerList[0].PeerID)
+	if parsed.PeerList[0].PeerID != [20]byte{
+		0x7a, 0x1c, 0xe4, 0x92, 0x3f,
+		0xb8, 0x0d, 0x6e, 0x55, 0xa3,
+		0xdf, 0x21, 0x9b, 0x44, 0x78,
+		0xcc, 0x02, 0xf1, 0x6d, 0x90} {
+		t.Errorf("'peer id' expected: %v | got: %x", "\x7a\x1c\xe4\x92\x3f\xb8\x0d\x6e\x55\xa3\xdf\x21\x9b\x44\x78\xcc\x02\xf1\x6d\x90", parsed.PeerList[0].PeerID)
 	}
 }

@@ -51,8 +51,11 @@ func TestValidTorrent(t *testing.T) {
 	}
 
 	if file.InfoHash != [20]byte{
-		'\xde', '\x2f', '\xee', '\x7c', '\xd8', '\xf3', '\x25', '\x14', '\xdc', '\x13',
-		'\x8b', '\x4c', '\xdd', '\x53', '\xc9', '\x3d', '\x7d', '\x7a', '\x1e', '\xb6'} {
+		0xde, 0x2f, 0xee, 0x7c, 0xd8,
+		0xf3, 0x25, 0x14, 0xdc, 0x13,
+		0x8b, 0x4c, 0xdd, 0x53, 0xc9,
+		0x3d, 0x7d, 0x7a, 0x1e, 0xb6,
+	} {
 		t.Errorf("'info hash' expected: [%v], | got: [%x]", "de2fee7cd8f32514dc138b4cdd53c93d7d7a1eb6", file.InfoHash)
 	}
 
