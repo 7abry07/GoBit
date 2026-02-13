@@ -63,7 +63,13 @@ func TestHttpAnnounceRequest(t *testing.T) {
 
 func TestHttpAnnounceResponse(t *testing.T) {
 	req := tracker.Request{}
-	resp := "d8:completei0e10:downloadedi0e10:incompletei0e8:intervali0e12:min intervali0e5:peers6:\xff\xff\xff\xff\xff\xffe"
+	resp := "d8:completei0e" +
+		"10:downloadedi0e" +
+		"10:incompletei0e" +
+		"8:intervali0e" +
+		"12:min intervali0e" +
+		"5:peers6:\xff\xff\xff\xff\xff\xff" +
+		"6:peers618:\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xffe"
 
 	req.Kind = tracker.Announce
 
@@ -74,6 +80,10 @@ func TestHttpAnnounceResponse(t *testing.T) {
 
 	if parsed.PeerList[0].IpPort.String() != "255.255.255.255:65535" {
 		t.Errorf("peer expected: <%v>[%v] | got: <%v>[%v]", "255.255.255.255", 65535, parsed.PeerList[0].IpPort.Addr(), parsed.PeerList[0].IpPort.Port())
+	}
+
+	if parsed.PeerList[1].IpPort.String() != "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535" {
+		t.Errorf("peer expected: <%v>[%v] | got: <%v>[%v]", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", 65535, parsed.PeerList[1].IpPort.Addr(), parsed.PeerList[1].IpPort.Port())
 	}
 
 	if parsed.Complete != 0 {

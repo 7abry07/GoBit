@@ -109,23 +109,84 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 		peersStr, _ := peerList.Str()
 		peers := []byte(peersStr)
 
-		for len(peers) != 0 {
-			ip := peers[0:4]
-			port := peers[4:6]
+		lst, ok := parseV4CompactPeers(peers)
+		if !ok {
+			return Response{}, invalid_tracker_resp_err
+		}
+		resp.PeerList = append(resp.PeerList, lst...)
+	}
 
-			parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[3], ip[2], ip[1], ip[0]))
-			if err != nil {
-				return Response{}, invalid_tracker_resp_err
+	peer6List, ok := root.Find("peers6")
+	if ok {
+		if peer6List.Type() == bencode.Str_t {
+			peersStr, _ := peer6List.Str()
+			peers := []byte(peersStr)
+
+			lst, ok := parseV6CompactPeers(peers)
+			if ok {
+				resp.PeerList = append(resp.PeerList, lst...)
 			}
-
-			peerVal := torrent.Peer{}
-			peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
-			resp.PeerList = append(resp.PeerList, peerVal)
-
-			peers = peers[6:]
 		}
 	}
 
 	return resp, nil
+}
 
+func parseV4CompactPeers(peers []byte) ([]torrent.Peer, bool) {
+	peerList := []torrent.Peer{}
+
+	for {
+		if len(peers) == 0 {
+			break
+		}
+
+		ip := peers[0:4]
+		port := peers[4:6]
+
+		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[3], ip[2], ip[1], ip[0]))
+		if err != nil {
+			return []torrent.Peer{}, false
+		}
+
+		peerVal := torrent.Peer{}
+		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
+		peerList = append(peerList, peerVal)
+
+		peers = peers[6:]
+	}
+	return peerList, true
+}
+
+func parseV6CompactPeers(peers []byte) ([]torrent.Peer, bool) {
+	peerList := []torrent.Peer{}
+
+	for {
+		if len(peers) == 0 {
+			break
+		}
+
+		ip := peers[0:16]
+		port := peers[16:18]
+
+		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%x:%x:%x:%x:%x:%x:%x:%x",
+			uint16(ip[15])|uint16(ip[14])<<8,
+			uint16(ip[13])|uint16(ip[12])<<8,
+			uint16(ip[11])|uint16(ip[10])<<8,
+			uint16(ip[9])|uint16(ip[8])<<8,
+			uint16(ip[7])|uint16(ip[6])<<8,
+			uint16(ip[5])|uint16(ip[4])<<8,
+			uint16(ip[3])|uint16(ip[2])<<8,
+			uint16(ip[1])|uint16(ip[0])<<8))
+
+		if err != nil {
+			return []torrent.Peer{}, false
+		}
+
+		peerVal := torrent.Peer{}
+		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
+		peerList = append(peerList, peerVal)
+
+		peers = peers[18:]
+	}
+	return peerList, true
 }
