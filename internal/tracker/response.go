@@ -144,7 +144,7 @@ func parseV4CompactPeers(peers []byte) ([]torrent.Peer, bool) {
 		ip := peers[0:4]
 		port := peers[4:6]
 
-		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[3], ip[2], ip[1], ip[0]))
+		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 		if err != nil {
 			return []torrent.Peer{}, false
 		}
@@ -170,14 +170,14 @@ func parseV6CompactPeers(peers []byte) ([]torrent.Peer, bool) {
 		port := peers[16:18]
 
 		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%x:%x:%x:%x:%x:%x:%x:%x",
-			uint16(ip[15])|uint16(ip[14])<<8,
-			uint16(ip[13])|uint16(ip[12])<<8,
-			uint16(ip[11])|uint16(ip[10])<<8,
-			uint16(ip[9])|uint16(ip[8])<<8,
-			uint16(ip[7])|uint16(ip[6])<<8,
-			uint16(ip[5])|uint16(ip[4])<<8,
+			uint16(ip[1])|uint16(ip[0])<<8,
 			uint16(ip[3])|uint16(ip[2])<<8,
-			uint16(ip[1])|uint16(ip[0])<<8))
+			uint16(ip[5])|uint16(ip[4])<<8,
+			uint16(ip[7])|uint16(ip[6])<<8,
+			uint16(ip[9])|uint16(ip[8])<<8,
+			uint16(ip[11])|uint16(ip[10])<<8,
+			uint16(ip[13])|uint16(ip[12])<<8,
+			uint16(ip[15])|uint16(ip[14])<<8))
 
 		if err != nil {
 			return []torrent.Peer{}, false
