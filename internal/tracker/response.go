@@ -67,7 +67,6 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 		resp.Complete = int64(complete)
 		resp.Incomplete = int64(incomplete)
 		resp.Downloaded = int64(downloaded)
-
 		return resp, nil
 	}
 	complete, _ := root.FindIntOrDef("complete", -1)

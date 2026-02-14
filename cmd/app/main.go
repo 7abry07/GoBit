@@ -20,6 +20,8 @@ func main() {
 	req.Event = tracker.Started
 	req.Url = file.Announce
 
+	peerID := []byte("-GT0001-123456789012")
+
 	go man.Send(req)
 
 	resp := <-ch
@@ -27,7 +29,16 @@ func main() {
 		panic(resp.Err)
 	}
 
+	conns := []torrent.PeerConnection{}
 	for _, peer := range resp.Val.PeerList {
 		fmt.Printf("<%v> : [%v]\n", peer.IpPort.Addr(), peer.IpPort.Port())
+		conn, err := torrent.NewPeerConn(peer, file.InfoHash, [20]byte(peerID))
+		if err == nil {
+			conns = append(conns, conn)
+		}
+	}
+
+	for _, conn := range conns {
+		fmt.Println(conn.PeerInfo.IpPort.String())
 	}
 }

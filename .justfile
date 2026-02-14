@@ -11,7 +11,7 @@ alias ta := testall
     go build cmd/app/main.go
 
 @debug:
-    gdlv run cmd/app/main.go
+    dlv debug cmd/app/main.go
 
 @test target:
     go test internal/tests/{{ target }}/{{ target }}_test.go
