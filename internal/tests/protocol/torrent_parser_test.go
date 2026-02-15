@@ -1,14 +1,14 @@
-package torrent_test
+package torrent_parsing_test
 
 import (
-	"GoBit/internal/torrent"
+	"GoBit/internal/protocol"
 	"fmt"
 	"testing"
 	"time"
 )
 
 func TestValidTorrent(t *testing.T) {
-	file, err := torrent.ParseFile("test_files/naruto.torrent")
+	file, err := protocol.ParseTorrentFile("test_files/naruto.torrent")
 	if err != nil {
 		t.Errorf("error -> %v", err)
 		return

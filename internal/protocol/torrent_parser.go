@@ -1,4 +1,4 @@
-package torrent
+package protocol
 
 import (
 	"GoBit/internal/bencode"
@@ -21,7 +21,7 @@ type fileinfo struct {
 	Path   string
 }
 
-type File struct {
+type TorrentFile struct {
 	Announce    url.URL
 	Name        string
 	Pieces      []byte
@@ -38,62 +38,62 @@ type File struct {
 	Length       *uint64
 }
 
-func (f File) FileMode() fileMode {
+func (f TorrentFile) FileMode() fileMode {
 	if f.Files == nil {
 		return single
 	}
 	return multi
 }
 
-func ParseFile(path string) (File, error) {
+func ParseTorrentFile(path string) (TorrentFile, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return File{}, err
+		return TorrentFile{}, err
 	}
-	file, err := Parse(string(content))
+	file, err := parse(string(content))
 	if err != nil {
-		return File{}, err
+		return TorrentFile{}, err
 	}
 	return file, nil
 }
 
-func Parse(input string) (File, error) {
+func parse(input string) (TorrentFile, error) {
 	decoded, err := bencode.Decode(input)
 	if err != nil {
-		return File{}, err
+		return TorrentFile{}, err
 	}
-	var f File
+	var f TorrentFile
 
 	root, ok := decoded.Dict()
 	if !ok {
-		return File{}, Root_not_dict_err
+		return TorrentFile{}, Root_not_dict_err
 	}
 
 	info, ok := root.FindDict("info")
 	if !ok {
-		return File{}, Missing_info_err
+		return TorrentFile{}, Missing_info_err
 	}
 
 	announceVal, ok := root.FindStr("announce")
 	if !ok {
-		return File{}, Missing_announce_err
+		return TorrentFile{}, Missing_announce_err
 	}
 	announce, err := url.Parse(string(announceVal))
 	if err != nil {
-		return File{}, Invalid_announce_err
+		return TorrentFile{}, Invalid_announce_err
 	}
 
 	name, ok := info.FindStr("name")
 	if !ok {
-		return File{}, Missing_name_err
+		return TorrentFile{}, Missing_name_err
 	}
 	pieces, ok := info.FindStr("pieces")
 	if !ok {
-		return File{}, Missing_pieces_err
+		return TorrentFile{}, Missing_pieces_err
 	}
 	pieceLen, ok := info.FindInt("piece length")
 	if !ok {
-		return File{}, Missing_piecelen_err
+		return TorrentFile{}, Missing_piecelen_err
 	}
 
 	comment, commentOk := root.FindStr("comment")
@@ -106,10 +106,10 @@ func Parse(input string) (File, error) {
 	length, lengthOk := info.FindInt("length")
 	files, filesresOk := parseFiles(info)
 	if lengthOk && filesresOk {
-		return File{}, Both_length_files_present_err
+		return TorrentFile{}, Both_length_files_present_err
 	}
 	if !lengthOk && !filesresOk {
-		return File{}, Both_length_files_missing_err
+		return TorrentFile{}, Both_length_files_missing_err
 	}
 
 	f.Announce = *announce

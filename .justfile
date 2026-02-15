@@ -2,7 +2,6 @@ alias r := run
 alias b := build
 alias d := debug
 alias t := test
-alias ta := testall
 
 @run:
     go run cmd/app/main.go
@@ -13,21 +12,18 @@ alias ta := testall
 @debug:
     dlv debug cmd/app/main.go
 
-@test target:
-    go test internal/tests/{{ target }}/{{ target }}_test.go
-
-@testall flags="":
+@test flags="":
     echo "BENCODE TEST SUITE"
     echo "--------------------------"
-    just test bencode {{ flags }}
+    go test {{ flags }} GoBit/internal/tests/bencode/
     echo "--------------------------"
     echo ""
-    echo "TORRENT TEST SUITE"
+    echo "PROTOCOL TEST SUITE"
     echo "--------------------------"
-    just test torrent {{ flags }}
+    go test {{ flags }} GoBit/internal/tests/protocol/
     echo "--------------------------"
     echo ""
     echo "TRACKER TEST SUITE"
     echo "--------------------------"
-    just test tracker {{ flags }}
+    go test {{ flags }} GoBit/internal/tests/tracker/
     echo "--------------------------"

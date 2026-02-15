@@ -1,4 +1,4 @@
-package torrent
+package protocol
 
 import "net/netip"
 

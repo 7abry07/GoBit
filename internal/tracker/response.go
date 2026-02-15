@@ -2,7 +2,7 @@ package tracker
 
 import (
 	"GoBit/internal/bencode"
-	"GoBit/internal/torrent"
+	"GoBit/internal/protocol"
 	"fmt"
 	"net/netip"
 )
@@ -16,7 +16,7 @@ type Response struct {
 	Complete    int64
 	Incomplete  int64
 	Downloaded  int64
-	PeerList    []torrent.Peer
+	PeerList    []protocol.Peer
 }
 
 func ParseHttp(httpResp []byte, req Request) (Response, error) {
@@ -100,7 +100,7 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 				return Response{}, invalid_tracker_resp_err
 			}
 
-			peerVal := torrent.Peer{}
+			peerVal := protocol.Peer{}
 			copy(peerVal.PeerID[:], string(pid))
 			peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port))
 			resp.PeerList = append(resp.PeerList, peerVal)
@@ -132,8 +132,8 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 	return resp, nil
 }
 
-func parseV4CompactPeers(peers []byte) ([]torrent.Peer, bool) {
-	peerList := []torrent.Peer{}
+func parseV4CompactPeers(peers []byte) ([]protocol.Peer, bool) {
+	peerList := []protocol.Peer{}
 
 	for {
 		if len(peers) == 0 {
@@ -145,10 +145,10 @@ func parseV4CompactPeers(peers []byte) ([]torrent.Peer, bool) {
 
 		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 		if err != nil {
-			return []torrent.Peer{}, false
+			return []protocol.Peer{}, false
 		}
 
-		peerVal := torrent.Peer{}
+		peerVal := protocol.Peer{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 
@@ -157,8 +157,8 @@ func parseV4CompactPeers(peers []byte) ([]torrent.Peer, bool) {
 	return peerList, true
 }
 
-func parseV6CompactPeers(peers []byte) ([]torrent.Peer, bool) {
-	peerList := []torrent.Peer{}
+func parseV6CompactPeers(peers []byte) ([]protocol.Peer, bool) {
+	peerList := []protocol.Peer{}
 
 	for {
 		if len(peers) == 0 {
@@ -179,10 +179,10 @@ func parseV6CompactPeers(peers []byte) ([]torrent.Peer, bool) {
 			uint16(ip[15])|uint16(ip[14])<<8))
 
 		if err != nil {
-			return []torrent.Peer{}, false
+			return []protocol.Peer{}, false
 		}
 
-		peerVal := torrent.Peer{}
+		peerVal := protocol.Peer{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 
