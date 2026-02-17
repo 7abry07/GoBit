@@ -21,4 +21,5 @@ var (
 	Both_length_files_missing_err error = errors.New("both files and length fields are missing")
 
 	Bad_peer_handshake_err error = errors.New("the handshake request or response of the peer is invalid")
+	Bad_peer_message_err   error = errors.New("the message sent to the peer is invalid")
 )
