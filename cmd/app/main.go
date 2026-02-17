@@ -29,21 +29,12 @@ func main() {
 	// 	panic(resp.Err)
 	// }
 	//
-	// conns := []protocol.PeerConnection{}
+	// conns := []*protocol.PeerConnection{}
 	// for _, peer := range resp.Val.PeerList {
 	// 	fmt.Printf("<%v> : [%v]\n", peer.IpPort.Addr(), peer.IpPort.Port())
 	// 	conn, err := protocol.NewPeerConn(peer, file.InfoHash, [20]byte(peerID))
 	// 	if err == nil {
 	// 		conns = append(conns, conn)
 	// 	}
-	// }
-	//
-	// for _, conn := range conns {
-	// 	fmt.Printf("connected -> %v\n", conn.PeerInfo.IpPort.String())
-	// }
-	//
-	// for _, peer := range conns {
-	// 	msg := <-peer.In
-	// 	fmt.Printf("message type -> %v\nmessage length-> %v\n\n", msg.Kind, len(msg.Payload)*8)
 	// }
 }

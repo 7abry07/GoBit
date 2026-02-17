@@ -14,36 +14,41 @@ type PeerConnection struct {
 	In  chan PeerMessage
 	Out chan PeerMessage
 
-	PeerInfo     Peer
-	IsChoked     bool
-	IsInterested bool
-	AmChoked     bool
-	AmInterested bool
+	Bitfield []uint8
+
+	PeerInfo      Peer
+	IsChoked      bool
+	IsInterested  bool
+	AmChoked      bool
+	AmInteresting bool
+	bitfieldSent  bool
 }
 
-func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (PeerConnection, error) {
+func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (*PeerConnection, error) {
 	handle := PeerConnection{}
 	handle.PeerInfo = p
 	handle.AmChoked = true
 	handle.IsChoked = true
-	handle.AmInterested = false
+	handle.AmInteresting = false
 	handle.IsInterested = false
+	handle.bitfieldSent = false
+	handle.Bitfield = nil
 	handle.In = make(chan PeerMessage)
 	handle.Out = make(chan PeerMessage)
 
-	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*5)
+	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
 	if err != nil {
-		return PeerConnection{}, err
+		return nil, err
 	}
 
 	handshakeReq, err := sendHandshake(conn, ih, pid)
 	if err != nil {
-		return PeerConnection{}, err
+		return nil, err
 	}
 
 	err = receiveHandshake(conn, handshakeReq)
 	if err != nil {
-		return PeerConnection{}, err
+		return nil, err
 	}
 
 	handle.sock = conn
@@ -51,7 +56,7 @@ func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (PeerConnection, error) {
 	go handle.readLoop()
 	go handle.writeLoop()
 
-	return handle, nil
+	return &handle, nil
 }
 
 func (p *PeerConnection) writeLoop() {
@@ -69,7 +74,38 @@ func (p *PeerConnection) readLoop() {
 		if err != nil {
 			return
 		}
-		p.In <- mess
+
+		switch mess.Kind {
+		case Choke:
+			{
+				p.AmChoked = true
+			}
+		case Unchoke:
+			{
+				p.AmChoked = false
+			}
+		case Interested:
+			{
+				p.AmInteresting = true
+			}
+		case Uninterested:
+			{
+				p.AmInteresting = false
+			}
+		case Bitfield:
+			{
+				if p.bitfieldSent {
+					return
+				}
+				p.bitfieldSent = true
+				p.Bitfield = []byte{}
+				p.Bitfield = append(p.Bitfield, mess.Payload...)
+			}
+		default:
+			{
+				p.In <- mess
+			}
+		}
 	}
 }
 
@@ -101,81 +137,6 @@ func (p *PeerConnection) receive() (PeerMessage, error) {
 }
 
 func (p *PeerConnection) send(mess PeerMessage) error {
-	// if mess.Kind < Have && mess.Payload != nil ||
-	// 	mess.Kind > Uninterested && mess.Payload == nil {
-	// 	return Bad_peer_message_err
-	// }
-	//
-	// output := []byte{}
-	// length := make([]byte, 4)
-	//
-	// binary.BigEndian.PutUint32(length, uint32(len(mess.Payload)+1))
-	//
-	// output = append(output, length...)
-	// output = append(output, byte(mess.Kind))
-
-	// content := []byte{}
-	//
-	// switch mess.Kind {
-	// case Have:
-	// 	{
-	// 		if len(mess.Payload) != 4 {
-	// 			return Bad_peer_message_err
-	// 		}
-	// 		pidx := binary.LittleEndian.Uint32(mess.Payload)
-	//
-	// 		content = binary.BigEndian.AppendUint32(content, pidx)
-	// 	}
-	// case Bitfield:
-	// 	{
-	// 		content = mess.Payload
-	// 	}
-	// case Request:
-	// 	{
-	// 		if len(mess.Payload) != 13 {
-	// 			return Bad_peer_message_err
-	// 		}
-	// 		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-	// 		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
-	// 		length := binary.LittleEndian.Uint32(mess.Payload[8:12])
-	//
-	// 		content = binary.BigEndian.AppendUint32(content, idx)
-	// 		content = binary.BigEndian.AppendUint32(content, begin)
-	// 		content = binary.BigEndian.AppendUint32(content, length)
-	// 	}
-	// case Piece:
-	// 	{
-	// 		if len(mess.Payload) < 9 {
-	// 			return Bad_peer_message_err
-	// 		}
-	// 		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-	// 		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
-	// 		block := mess.Payload[8:]
-	//
-	// 		if len(block)+9 != len(mess.Payload) {
-	// 			return Bad_peer_message_err
-	// 		}
-	//
-	// 		content = binary.BigEndian.AppendUint32(content, idx)
-	// 		content = binary.BigEndian.AppendUint32(content, begin)
-	// 		content = append(content, block...)
-	// 	}
-	// case Cancel:
-	// 	{
-	// 		if len(mess.Payload) != 13 {
-	// 			return Bad_peer_message_err
-	// 		}
-	// 		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-	// 		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
-	// 		length := binary.LittleEndian.Uint32(mess.Payload[8:12])
-	//
-	// 		content = binary.BigEndian.AppendUint32(content, idx)
-	// 		content = binary.BigEndian.AppendUint32(content, begin)
-	// 		content = binary.BigEndian.AppendUint32(content, length)
-	// 	}
-	// }
-	//
-
 	content, err := mess.ToNetwork()
 	if err != nil {
 		return err
