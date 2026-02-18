@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"GoBit/internal/utils"
 	"bytes"
 	"encoding/binary"
 	"io"
@@ -14,7 +15,7 @@ type PeerConnection struct {
 	In  chan PeerMessage
 	Out chan PeerMessage
 
-	Bitfield []uint8
+	pieces []uint8
 
 	PeerInfo      Peer
 	IsChoked      bool
@@ -32,7 +33,7 @@ func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (*PeerConnection, error) {
 	handle.AmInteresting = false
 	handle.IsInterested = false
 	handle.bitfieldSent = false
-	handle.Bitfield = nil
+	handle.pieces = nil
 	handle.In = make(chan PeerMessage)
 	handle.Out = make(chan PeerMessage)
 
@@ -92,14 +93,21 @@ func (p *PeerConnection) readLoop() {
 			{
 				p.AmInteresting = false
 			}
+		case Have:
+			{
+				idx := binary.LittleEndian.Uint32(mess.Payload)
+				byteIdx := idx / 8
+				bitIdx := 7 - (idx % 8)
+				p.pieces[byteIdx] |= 1 << bitIdx
+			}
 		case Bitfield:
 			{
 				if p.bitfieldSent {
 					return
 				}
 				p.bitfieldSent = true
-				p.Bitfield = []byte{}
-				p.Bitfield = append(p.Bitfield, mess.Payload...)
+				p.pieces = []byte{}
+				p.pieces = append(p.pieces, mess.Payload...)
 			}
 		default:
 			{
@@ -107,6 +115,17 @@ func (p *PeerConnection) readLoop() {
 			}
 		}
 	}
+}
+
+func (p *PeerConnection) HasPiece(idx uint32) bool {
+	byteIdx := idx / 8
+	bitIdx := 7 - (idx % 8)
+
+	if byteIdx >= uint32(len(p.pieces)) {
+		panic("out of bounds peer bitfield access")
+	}
+
+	return (p.pieces[byteIdx] & 1 << uint8(bitIdx)) == 1
 }
 
 func (p *PeerConnection) receive() (PeerMessage, error) {
@@ -141,7 +160,7 @@ func (p *PeerConnection) send(mess PeerMessage) error {
 	if err != nil {
 		return err
 	}
-	return WriteFull(p.sock, content)
+	return utils.WriteFull(p.sock, content)
 }
 
 func receiveHandshake(conn net.Conn, req []byte) error {
@@ -152,18 +171,18 @@ func receiveHandshake(conn net.Conn, req []byte) error {
 	conn.SetDeadline(time.Time{})
 
 	if err != nil {
-		return Bad_peer_handshake_err
+		return Peer_bad_handshake_err
 	}
 	if bytesRead < 68 {
-		return Bad_peer_handshake_err
+		return Peer_bad_handshake_err
 	}
 
 	if !bytes.Equal(buf[:20], req[:20]) {
-		return Bad_peer_handshake_err
+		return Peer_bad_handshake_err
 	}
 
 	if !bytes.Equal(buf[29:49], req[29:49]) {
-		return Bad_peer_handshake_err
+		return Peer_bad_handshake_err
 	}
 	return nil
 }
@@ -180,7 +199,7 @@ func sendHandshake(conn net.Conn, ih, pid [20]byte) ([]byte, error) {
 	handshake = append(handshake, ih[:]...)
 	handshake = append(handshake, pid[:]...)
 
-	err := WriteFull(conn, handshake)
+	err := utils.WriteFull(conn, handshake)
 	if err != nil {
 		return []byte{}, err
 	}

@@ -66,34 +66,34 @@ func parse(input string) (TorrentFile, error) {
 
 	root, ok := decoded.Dict()
 	if !ok {
-		return TorrentFile{}, Root_not_dict_err
+		return TorrentFile{}, Torrent_root_not_dict_err
 	}
 
 	info, ok := root.FindDict("info")
 	if !ok {
-		return TorrentFile{}, Missing_info_err
+		return TorrentFile{}, Torrent_missing_info_err
 	}
 
 	announceVal, ok := root.FindStr("announce")
 	if !ok {
-		return TorrentFile{}, Missing_announce_err
+		return TorrentFile{}, Torrent_missing_announce_err
 	}
 	announce, err := url.Parse(string(announceVal))
 	if err != nil {
-		return TorrentFile{}, Invalid_announce_err
+		return TorrentFile{}, Torrent_invalid_announce_err
 	}
 
 	name, ok := info.FindStr("name")
 	if !ok {
-		return TorrentFile{}, Missing_name_err
+		return TorrentFile{}, Torrent_missing_name_err
 	}
 	pieces, ok := info.FindStr("pieces")
 	if !ok {
-		return TorrentFile{}, Missing_pieces_err
+		return TorrentFile{}, Torrent_missing_pieces_err
 	}
 	pieceLen, ok := info.FindInt("piece length")
 	if !ok {
-		return TorrentFile{}, Missing_piecelen_err
+		return TorrentFile{}, Torrent_missing_piecelen_err
 	}
 
 	comment, commentOk := root.FindStr("comment")
@@ -106,10 +106,10 @@ func parse(input string) (TorrentFile, error) {
 	length, lengthOk := info.FindInt("length")
 	files, filesresOk := parseFiles(info)
 	if lengthOk && filesresOk {
-		return TorrentFile{}, Both_length_files_present_err
+		return TorrentFile{}, Torrent_both_length_files_present_err
 	}
 	if !lengthOk && !filesresOk {
-		return TorrentFile{}, Both_length_files_missing_err
+		return TorrentFile{}, Torrent_both_length_files_missing_err
 	}
 
 	f.Announce = *announce

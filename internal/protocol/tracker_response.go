@@ -1,13 +1,12 @@
-package tracker
+package protocol
 
 import (
 	"GoBit/internal/bencode"
-	"GoBit/internal/protocol"
 	"fmt"
 	"net/netip"
 )
 
-type Response struct {
+type TrackerResponse struct {
 	Failure     *string
 	Warning     *string
 	TrackerID   *string
@@ -16,18 +15,18 @@ type Response struct {
 	Complete    int64
 	Incomplete  int64
 	Downloaded  int64
-	PeerList    []protocol.Peer
+	PeerList    []Peer
 }
 
-func ParseHttp(httpResp []byte, req Request) (Response, error) {
-	resp := Response{}
+func ParseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
+	resp := TrackerResponse{}
 	decoded, err := bencode.Decode(string(httpResp))
 	if err != nil {
-		return Response{}, err
+		return TrackerResponse{}, err
 	}
 	root, ok := decoded.Dict()
 	if !ok {
-		return Response{}, invalid_tracker_resp_err
+		return TrackerResponse{}, Tracker_invalid_resp_err
 	}
 
 	interval, _ := root.FindIntOrDef("interval", 1800)
@@ -55,11 +54,11 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 	if req.Kind == Scrape {
 		files, ok := root.FindDict("files")
 		if !ok {
-			return Response{}, invalid_tracker_resp_err
+			return TrackerResponse{}, Tracker_invalid_resp_err
 		}
 		file, ok := files.FindDict(string(req.Infohash[:]))
 		if !ok {
-			return Response{}, invalid_tracker_resp_err
+			return TrackerResponse{}, Tracker_invalid_resp_err
 		}
 		complete, _ := file.FindIntOrDef("complete", -1)
 		incomplete, _ := file.FindIntOrDef("incomplete", -1)
@@ -78,29 +77,29 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 
 	peerList, ok := root.Find("peers")
 	if !ok {
-		return Response{}, invalid_tracker_resp_err
+		return TrackerResponse{}, Tracker_invalid_resp_err
 	}
 
 	if peerList.Type() == bencode.List_t {
 		peers, _ := peerList.List()
 		for _, peerNode := range peers {
-			peer, ok := peerNode.Dict()
+			p, ok := peerNode.Dict()
 			if !ok {
-				return Response{}, invalid_tracker_resp_err
+				return TrackerResponse{}, Tracker_invalid_resp_err
 			}
-			pid, _ := peer.FindStrOrDef("peer id", "")
-			ip, _ := peer.FindStrOrDef("ip", "")
-			port, _ := peer.FindIntOrDef("port", -1)
+			pid, _ := p.FindStrOrDef("peer id", "")
+			ip, _ := p.FindStrOrDef("ip", "")
+			port, _ := p.FindIntOrDef("port", -1)
 
 			if ip == "" || port == -1 {
 				continue
 			}
 			parsedIp, err := netip.ParseAddr(string(ip))
 			if err != nil {
-				return Response{}, invalid_tracker_resp_err
+				return TrackerResponse{}, Tracker_invalid_resp_err
 			}
 
-			peerVal := protocol.Peer{}
+			peerVal := Peer{}
 			copy(peerVal.PeerID[:], string(pid))
 			peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port))
 			resp.PeerList = append(resp.PeerList, peerVal)
@@ -111,7 +110,7 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 
 		lst, ok := parseV4CompactPeers(peers)
 		if !ok {
-			return Response{}, invalid_tracker_resp_err
+			return TrackerResponse{}, Tracker_invalid_resp_err
 		}
 		resp.PeerList = append(resp.PeerList, lst...)
 	}
@@ -132,8 +131,8 @@ func ParseHttp(httpResp []byte, req Request) (Response, error) {
 	return resp, nil
 }
 
-func parseV4CompactPeers(peers []byte) ([]protocol.Peer, bool) {
-	peerList := []protocol.Peer{}
+func parseV4CompactPeers(peers []byte) ([]Peer, bool) {
+	peerList := []Peer{}
 
 	for {
 		if len(peers) == 0 {
@@ -145,10 +144,10 @@ func parseV4CompactPeers(peers []byte) ([]protocol.Peer, bool) {
 
 		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 		if err != nil {
-			return []protocol.Peer{}, false
+			return []Peer{}, false
 		}
 
-		peerVal := protocol.Peer{}
+		peerVal := Peer{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 
@@ -157,8 +156,8 @@ func parseV4CompactPeers(peers []byte) ([]protocol.Peer, bool) {
 	return peerList, true
 }
 
-func parseV6CompactPeers(peers []byte) ([]protocol.Peer, bool) {
-	peerList := []protocol.Peer{}
+func parseV6CompactPeers(peers []byte) ([]Peer, bool) {
+	peerList := []Peer{}
 
 	for {
 		if len(peers) == 0 {
@@ -179,10 +178,10 @@ func parseV6CompactPeers(peers []byte) ([]protocol.Peer, bool) {
 			uint16(ip[15])|uint16(ip[14])<<8))
 
 		if err != nil {
-			return []protocol.Peer{}, false
+			return []Peer{}, false
 		}
 
-		peerVal := protocol.Peer{}
+		peerVal := Peer{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 

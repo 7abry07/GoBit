@@ -1,4 +1,4 @@
-package tracker
+package protocol
 
 import (
 	"io"
@@ -7,45 +7,45 @@ import (
 
 type result struct {
 	Err error
-	Val Response
+	Val TrackerResponse
 }
 
-type manager struct {
+type TrackerManager struct {
 	results chan<- result
 }
 
-func NewManager() (*manager, <-chan result) {
+func NewManager() (*TrackerManager, <-chan result) {
 	ch := make(chan result)
-	m := manager{}
+	m := TrackerManager{}
 	m.results = ch
 	return &m, ch
 }
 
-func (m *manager) Send(req Request) {
+func (m *TrackerManager) Send(req TrackerRequest) {
 	switch req.Url.Scheme {
 	case "http":
 		{
 			trackerUrl, err := req.EncodeHttp()
 			if err != nil {
-				m.results <- result{err, Response{}}
+				m.results <- result{err, TrackerResponse{}}
 				return
 			}
 
 			httpResp, err := http.Get(trackerUrl.String())
 			if err != nil {
-				m.results <- result{err, Response{}}
+				m.results <- result{err, TrackerResponse{}}
 				return
 			}
 
 			content, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				m.results <- result{err, Response{}}
+				m.results <- result{err, TrackerResponse{}}
 				return
 			}
 
 			resp, err := ParseHttp(content, req)
 			if err != nil {
-				m.results <- result{err, Response{}}
+				m.results <- result{err, TrackerResponse{}}
 				return
 			}
 
@@ -54,11 +54,11 @@ func (m *manager) Send(req Request) {
 	case "udp":
 		{
 			// TODO
-			m.results <- result{invalid_scheme_err, Response{}}
+			m.results <- result{Tracker_invalid_scheme_err, TrackerResponse{}}
 		}
 	default:
 		{
-			m.results <- result{invalid_scheme_err, Response{}}
+			m.results <- result{Tracker_invalid_scheme_err, TrackerResponse{}}
 		}
 	}
 }

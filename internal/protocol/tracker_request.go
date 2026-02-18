@@ -1,4 +1,4 @@
-package tracker
+package protocol
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ const (
 	Scrape
 )
 
-type Request struct {
+type TrackerRequest struct {
 	Url        url.URL
 	TrackerID  string
 	Infohash   [20]byte
@@ -41,7 +41,7 @@ type Request struct {
 	Kind       requestKind
 }
 
-func (r Request) EncodeHttp() (url.URL, error) {
+func (r TrackerRequest) EncodeHttp() (url.URL, error) {
 	trackerUrl := r.Url
 	if r.Kind == Announce {
 		eventStr := []string{"none", "completed", "started", "stopped"}
@@ -77,7 +77,7 @@ func (r Request) EncodeHttp() (url.URL, error) {
 	} else {
 		path := strings.Replace(trackerUrl.Path, "announce", "scrape", 1)
 		if path == trackerUrl.Path {
-			return url.URL{}, scrape_not_supported_err
+			return url.URL{}, Tracker_scrape_not_supported_err
 		}
 		trackerUrl.Path = path
 		trackerUrl.RawQuery = fmt.Sprintf("info_hash=%v", url.QueryEscape(string(r.Infohash[:])))

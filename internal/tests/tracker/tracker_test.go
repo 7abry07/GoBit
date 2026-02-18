@@ -1,18 +1,18 @@
 package tracker_test
 
 import (
-	"GoBit/internal/tracker"
+	"GoBit/internal/protocol"
 	"net/netip"
 	"net/url"
 	"testing"
 )
 
 func TestHttpAnnounceRequest(t *testing.T) {
-	req := tracker.Request{}
+	req := protocol.TrackerRequest{}
 
 	req.Downloaded = 1
 	req.Uploaded = 1
-	req.Event = tracker.None
+	req.Event = protocol.None
 	req.Infohash =
 		[20]byte{
 			0xde, 0x2f, 0xee, 0x7c, 0xd8,
@@ -35,7 +35,7 @@ func TestHttpAnnounceRequest(t *testing.T) {
 	req.Ip, _ = netip.ParseAddr("255.255.255.255")
 	u, _ := url.Parse("http://hello:7777/announce")
 	req.Url = *u
-	req.Kind = tracker.Announce
+	req.Kind = protocol.Announce
 	req.Port = 6881
 	req.Left = 4000
 
@@ -62,7 +62,7 @@ func TestHttpAnnounceRequest(t *testing.T) {
 }
 
 func TestHttpAnnounceResponse(t *testing.T) {
-	req := tracker.Request{}
+	req := protocol.TrackerRequest{}
 	resp := "d8:completei0e" +
 		"10:downloadedi0e" +
 		"10:incompletei0e" +
@@ -71,9 +71,9 @@ func TestHttpAnnounceResponse(t *testing.T) {
 		"5:peers6:\xff\xff\xff\xff\xff\xff" +
 		"6:peers618:\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xffe"
 
-	req.Kind = tracker.Announce
+	req.Kind = protocol.Announce
 
-	parsed, err := tracker.ParseHttp([]byte(resp), req)
+	parsed, err := protocol.ParseHttp([]byte(resp), req)
 	if err != nil {
 		t.Errorf("unexpected error -> %v", err.Error())
 	}
@@ -108,14 +108,14 @@ func TestHttpAnnounceResponse(t *testing.T) {
 }
 
 func TestHttpScrapeResponse(t *testing.T) {
-	req := tracker.Request{}
+	req := protocol.TrackerRequest{}
 	resp := "d5:files" +
 		"d20:\xde\x2f\xee\x7c\xd8\xf3\x25\x14\xdc\x13\x8b\x4c\xdd\x53\xc9\x3d\x7d\x7a\x1e\xb6" +
 		"d8:completei0e" +
 		"10:downloadedi0e" +
 		"10:incompletei0eeee"
 
-	req.Kind = tracker.Scrape
+	req.Kind = protocol.Scrape
 	req.Infohash =
 		[20]byte{
 			0xde, 0x2f, 0xee, 0x7c, 0xd8,
@@ -124,7 +124,7 @@ func TestHttpScrapeResponse(t *testing.T) {
 			0x3d, 0x7d, 0x7a, 0x1e, 0xb6,
 		}
 
-	parsed, err := tracker.ParseHttp([]byte(resp), req)
+	parsed, err := protocol.ParseHttp([]byte(resp), req)
 	if err != nil {
 		t.Errorf("unexpected error -> %v", err.Error())
 	}
@@ -143,7 +143,7 @@ func TestHttpScrapeResponse(t *testing.T) {
 }
 
 func TestBencodedPeers(t *testing.T) {
-	req := tracker.Request{}
+	req := protocol.TrackerRequest{}
 	resp := "d8:completei0e" +
 		"10:downloadedi0e" +
 		"10:incompletei0e" +
@@ -153,9 +153,9 @@ func TestBencodedPeers(t *testing.T) {
 		"7:peer id20:\x7a\x1c\xe4\x92\x3f\xb8\x0d\x6e\x55\xa3\xdf\x21\x9b\x44\x78\xcc\x02\xf1\x6d\x90" +
 		"4:porti65535eeee"
 
-	req.Kind = tracker.Announce
+	req.Kind = protocol.Announce
 
-	parsed, err := tracker.ParseHttp([]byte(resp), req)
+	parsed, err := protocol.ParseHttp([]byte(resp), req)
 	if err != nil {
 		t.Errorf("unexpected error -> %v", err.Error())
 	}
