@@ -19,8 +19,8 @@ const (
 )
 
 const (
-	Announce requestKind = iota
-	Scrape
+	TrackerAnnounce requestKind = iota
+	TrackerScrape
 )
 
 type TrackerRequest struct {
@@ -43,7 +43,7 @@ type TrackerRequest struct {
 
 func (r TrackerRequest) EncodeHttp() (url.URL, error) {
 	trackerUrl := r.Url
-	if r.Kind == Announce {
+	if r.Kind == TrackerAnnounce {
 		eventStr := []string{"none", "completed", "started", "stopped"}
 		query := fmt.Sprintf(
 			"info_hash=%v"+

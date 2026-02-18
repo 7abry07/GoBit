@@ -18,7 +18,7 @@ type TrackerResponse struct {
 	PeerList    []Peer
 }
 
-func ParseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
+func ParseTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
 	resp := TrackerResponse{}
 	decoded, err := bencode.Decode(string(httpResp))
 	if err != nil {
@@ -51,7 +51,7 @@ func ParseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
 		resp.TrackerID = &str
 	}
 
-	if req.Kind == Scrape {
+	if req.Kind == TrackerScrape {
 		files, ok := root.FindDict("files")
 		if !ok {
 			return TrackerResponse{}, Tracker_invalid_resp_err

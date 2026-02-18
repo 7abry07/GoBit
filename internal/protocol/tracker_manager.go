@@ -14,7 +14,7 @@ type TrackerManager struct {
 	results chan<- result
 }
 
-func NewManager() (*TrackerManager, <-chan result) {
+func NewTrackerManager() (*TrackerManager, <-chan result) {
 	ch := make(chan result)
 	m := TrackerManager{}
 	m.results = ch
@@ -43,7 +43,7 @@ func (m *TrackerManager) Send(req TrackerRequest) {
 				return
 			}
 
-			resp, err := ParseHttp(content, req)
+			resp, err := ParseTrackerResponseHttp(content, req)
 			if err != nil {
 				m.results <- result{err, TrackerResponse{}}
 				return
