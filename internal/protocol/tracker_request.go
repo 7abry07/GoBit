@@ -5,27 +5,24 @@ import (
 	"net/netip"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
-type eventType int
-type requestKind int
+type TrackerEventType int
+type TrackerRequestKind int
 
 const (
-	None eventType = iota
-	Completed
-	Started
-	Stopped
+	TrackerNone TrackerEventType = iota
+	TrackerCompleted
+	TrackerStarted
+	TrackerStopped
 )
 
 const (
-	TrackerAnnounce requestKind = iota
+	TrackerAnnounce TrackerRequestKind = iota
 	TrackerScrape
 )
 
 type TrackerRequest struct {
-	Url        url.URL
-	TrackerID  string
 	Infohash   [20]byte
 	PeerID     [20]byte
 	Downloaded int64
@@ -37,13 +34,14 @@ type TrackerRequest struct {
 	Key        uint32
 	NoPID      uint8
 	Compact    uint8
-	Event      eventType
-	Kind       requestKind
+	Event      TrackerEventType
+	Kind       TrackerRequestKind
 }
 
-func (r TrackerRequest) EncodeHttp() (url.URL, error) {
-	trackerUrl := r.Url
-	if r.Kind == TrackerAnnounce {
+func (req TrackerRequest) SerializeHttp(t Tracker) url.URL {
+	fullUrl := url.URL{}
+	if req.Kind == TrackerAnnounce {
+		fullUrl = t.Announce
 		eventStr := []string{"none", "completed", "started", "stopped"}
 		query := fmt.Sprintf(
 			"info_hash=%v"+
@@ -59,28 +57,25 @@ func (r TrackerRequest) EncodeHttp() (url.URL, error) {
 				"&ip=%v"+
 				"&key=%v"+
 				"&trackerid=%v",
-			url.QueryEscape(string(r.Infohash[:])),
-			url.QueryEscape(string(r.PeerID[:])),
-			url.QueryEscape(strconv.Itoa(int(r.Port))),
-			url.QueryEscape(strconv.Itoa(int(r.Uploaded))),
-			url.QueryEscape(strconv.Itoa(int(r.Downloaded))),
-			url.QueryEscape(strconv.Itoa(int(r.Left))),
-			url.QueryEscape(strconv.Itoa(int(r.Compact))),
-			url.QueryEscape(strconv.Itoa(int(r.NoPID))),
-			url.QueryEscape(eventStr[r.Event]),
-			url.QueryEscape(strconv.Itoa(int(r.Numwant))),
-			url.QueryEscape(r.Ip.String()),
-			url.QueryEscape(strconv.Itoa(int(r.Key))),
-			url.QueryEscape(r.TrackerID),
+			url.QueryEscape(string(req.Infohash[:])),
+			url.QueryEscape(string(req.PeerID[:])),
+			url.QueryEscape(strconv.Itoa(int(req.Port))),
+			url.QueryEscape(strconv.Itoa(int(req.Uploaded))),
+			url.QueryEscape(strconv.Itoa(int(req.Downloaded))),
+			url.QueryEscape(strconv.Itoa(int(req.Left))),
+			url.QueryEscape(strconv.Itoa(int(req.Compact))),
+			url.QueryEscape(strconv.Itoa(int(req.NoPID))),
+			url.QueryEscape(eventStr[req.Event]),
+			url.QueryEscape(strconv.Itoa(int(req.Numwant))),
+			url.QueryEscape(req.Ip.String()),
+			url.QueryEscape(strconv.Itoa(int(req.Key))),
+			url.QueryEscape(t.TrackerID),
 		)
-		trackerUrl.RawQuery = query
+
+		fullUrl.RawQuery = query
 	} else {
-		path := strings.Replace(trackerUrl.Path, "announce", "scrape", 1)
-		if path == trackerUrl.Path {
-			return url.URL{}, Tracker_scrape_not_supported_err
-		}
-		trackerUrl.Path = path
-		trackerUrl.RawQuery = fmt.Sprintf("info_hash=%v", url.QueryEscape(string(r.Infohash[:])))
+		fullUrl = t.Scrape
+		fullUrl.RawQuery = fmt.Sprintf("info_hash=%v", url.QueryEscape(string(req.Infohash[:])))
 	}
-	return trackerUrl, nil
+	return fullUrl
 }

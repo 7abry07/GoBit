@@ -18,7 +18,8 @@ var (
 	Torrent_both_length_files_present_err error = errors.New("both files and length fields are present")
 	Torrent_both_length_files_missing_err error = errors.New("both files and length fields are missing")
 
-	Tracker_invalid_scheme_err       error = errors.New("the url scheme is neither 'http' nor 'udp'")
+	Tracker_invalid_url_err          error = errors.New("the tracker url is invalid")
+	Tracker_invalid_scheme_err       error = errors.New("the tracker url scheme is neither 'http' nor 'udp'")
 	Tracker_invalid_resp_err         error = errors.New("the tracker response is in an invalid format")
 	Tracker_scrape_not_supported_err error = errors.New("the tracker does not support scrape requests")
 

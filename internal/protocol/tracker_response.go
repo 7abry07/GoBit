@@ -7,9 +7,10 @@ import (
 )
 
 type TrackerResponse struct {
+	Tracker_    *Tracker
 	Failure     *string
 	Warning     *string
-	TrackerID   *string
+	trackerID   *string
 	MinInterval uint32
 	Interval    uint32
 	Complete    int64
@@ -18,7 +19,7 @@ type TrackerResponse struct {
 	PeerList    []Peer
 }
 
-func ParseTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
+func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
 	resp := TrackerResponse{}
 	decoded, err := bencode.Decode(string(httpResp))
 	if err != nil {
@@ -48,7 +49,7 @@ func ParseTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerRespo
 	trackerId, trackeridOk := root.FindStr("tracker id")
 	if trackeridOk {
 		str := string(trackerId)
-		resp.TrackerID = &str
+		resp.trackerID = &str
 	}
 
 	if req.Kind == TrackerScrape {

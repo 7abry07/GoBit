@@ -11,8 +11,8 @@ import (
 
 type PeerConnection struct {
 	sock net.Conn
+	torr *Torrent
 
-	In  chan PeerMessage
 	Out chan PeerMessage
 
 	pieces []uint8
@@ -25,7 +25,7 @@ type PeerConnection struct {
 	bitfieldSent  bool
 }
 
-func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (*PeerConnection, error) {
+func NewPeerConn(p Peer, ih [20]byte, pid [20]byte, torrent *Torrent) (*PeerConnection, error) {
 	handle := PeerConnection{}
 	handle.PeerInfo = p
 	handle.AmChoked = true
@@ -34,8 +34,8 @@ func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (*PeerConnection, error) {
 	handle.IsInterested = false
 	handle.bitfieldSent = false
 	handle.pieces = nil
-	handle.In = make(chan PeerMessage)
 	handle.Out = make(chan PeerMessage)
+	handle.torr = torrent
 
 	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
 	if err != nil {
@@ -44,11 +44,13 @@ func NewPeerConn(p Peer, ih [20]byte, pid [20]byte) (*PeerConnection, error) {
 
 	handshakeReq, err := sendHandshake(conn, ih, pid)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
 	err = receiveHandshake(conn, handshakeReq)
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 
@@ -97,6 +99,9 @@ func (p *PeerConnection) readLoop() {
 			{
 				idx := binary.LittleEndian.Uint32(mess.Payload)
 				byteIdx := idx / 8
+				if byteIdx >= uint32(len(p.pieces)) {
+					return
+				}
 				bitIdx := 7 - (idx % 8)
 				p.pieces[byteIdx] |= 1 << bitIdx
 			}
@@ -111,7 +116,7 @@ func (p *PeerConnection) readLoop() {
 			}
 		default:
 			{
-				p.In <- mess
+				p.torr.PeerInbox <- mess
 			}
 		}
 	}
@@ -152,6 +157,7 @@ func (p *PeerConnection) receive() (PeerMessage, error) {
 	input = append(input, messBuf...)
 
 	mess, err := fromNetwork(input)
+	mess.Peer = p
 	return mess, err
 }
 
@@ -173,6 +179,7 @@ func receiveHandshake(conn net.Conn, req []byte) error {
 	if err != nil {
 		return Peer_bad_handshake_err
 	}
+
 	if bytesRead < 68 {
 		return Peer_bad_handshake_err
 	}
@@ -184,6 +191,7 @@ func receiveHandshake(conn net.Conn, req []byte) error {
 	if !bytes.Equal(buf[29:49], req[29:49]) {
 		return Peer_bad_handshake_err
 	}
+
 	return nil
 }
 

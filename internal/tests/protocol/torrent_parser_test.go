@@ -1,4 +1,4 @@
-package torrent_parsing_test
+package protocol_test
 
 import (
 	"GoBit/internal/protocol"
