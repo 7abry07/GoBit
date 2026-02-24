@@ -2,166 +2,60 @@ package protocol
 
 import (
 	"GoBit/internal/utils"
-	"bytes"
+	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
-	"time"
 )
 
-type PeerConnection struct {
+type peerConnection struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	sock net.Conn
 	torr *Torrent
 
+	in  chan PeerMessage
 	Out chan PeerMessage
 
 	pieces []uint8
 
-	PeerInfo      Peer
+	Info          Peer
 	IsChoked      bool
-	IsInterested  bool
+	IsInteresting bool
 	AmChoked      bool
 	AmInteresting bool
 	bitfieldSent  bool
 }
 
-func NewPeerConn(p Peer, ih [20]byte, pid [20]byte, torrent *Torrent) (*PeerConnection, error) {
-	handle := PeerConnection{}
-	handle.PeerInfo = p
-	handle.AmChoked = true
-	handle.IsChoked = true
-	handle.AmInteresting = false
-	handle.IsInterested = false
-	handle.bitfieldSent = false
-	handle.pieces = nil
-	handle.Out = make(chan PeerMessage)
-	handle.torr = torrent
+func (p *peerConnection) loop() {
+	go p.receiveLoop()
 
-	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
-	if err != nil {
-		return nil, err
-	}
-
-	handshakeReq, err := sendHandshake(conn, ih, pid)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	err = receiveHandshake(conn, handshakeReq)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	handle.sock = conn
-
-	go handle.readLoop()
-	go handle.writeLoop()
-
-	return &handle, nil
-}
-
-func (p *PeerConnection) writeLoop() {
-	for mess := range p.Out {
-		err := p.send(mess)
-		if err != nil {
-			return
-		}
-	}
-}
-
-func (p *PeerConnection) readLoop() {
 	for {
-		mess, err := p.receive()
-		if err != nil {
-			return
-		}
-
-		switch mess.Kind {
-		case Choke:
+		select {
+		case <-p.ctx.Done():
 			{
-				p.AmChoked = true
+				fmt.Printf("PEER REMOVED -> %v\n", string(p.Info.Pid.String()))
+				p.sock.Close()
+				return
 			}
-		case Unchoke:
+		case mess := <-p.Out:
 			{
-				p.AmChoked = false
-			}
-		case Interested:
-			{
-				p.AmInteresting = true
-			}
-		case Uninterested:
-			{
-				p.AmInteresting = false
-			}
-		case Have:
-			{
-				idx := binary.LittleEndian.Uint32(mess.Payload)
-				byteIdx := idx / 8
-				if byteIdx >= uint32(len(p.pieces)) {
-					return
+				err := p.send(mess)
+				if err != nil {
+					p.cancel()
 				}
-				bitIdx := 7 - (idx % 8)
-				p.pieces[byteIdx] |= 1 << bitIdx
 			}
-		case Bitfield:
+		case mess := <-p.in:
 			{
-				if p.bitfieldSent {
-					return
-				}
-				p.bitfieldSent = true
-				p.pieces = []byte{}
-				p.pieces = append(p.pieces, mess.Payload...)
-			}
-		default:
-			{
-				p.torr.PeerInbox <- mess
+				go p.handleMessage(mess)
 			}
 		}
 	}
 }
 
-func (p *PeerConnection) HasPiece(idx uint32) bool {
-	byteIdx := idx / 8
-	bitIdx := 7 - (idx % 8)
-
-	if byteIdx >= uint32(len(p.pieces)) {
-		panic("out of bounds peer bitfield access")
-	}
-
-	return (p.pieces[byteIdx] & 1 << uint8(bitIdx)) == 1
-}
-
-func (p *PeerConnection) receive() (PeerMessage, error) {
-	lenBuf := make([]byte, 4)
-
-	p.sock.SetDeadline(time.Now().Add(time.Second * 5))
-	bytesRead, err := io.ReadFull(p.sock, lenBuf)
-	if err != nil || bytesRead < 4 {
-		return PeerMessage{}, err
-	}
-
-	length := binary.BigEndian.Uint32(lenBuf)
-	messBuf := make([]byte, length)
-
-	bytesRead, err = io.ReadFull(p.sock, messBuf)
-	p.sock.SetDeadline(time.Time{})
-
-	if err != nil || bytesRead < int(length) {
-		return PeerMessage{}, err
-	}
-
-	input := []byte{}
-	input = append(input, lenBuf...)
-	input = append(input, messBuf...)
-
-	mess, err := fromNetwork(input)
-	mess.Peer = p
-	return mess, err
-}
-
-func (p *PeerConnection) send(mess PeerMessage) error {
+func (p *peerConnection) send(mess PeerMessage) error {
 	content, err := mess.ToNetwork()
 	if err != nil {
 		return err
@@ -169,48 +63,101 @@ func (p *PeerConnection) send(mess PeerMessage) error {
 	return utils.WriteFull(p.sock, content)
 }
 
-func receiveHandshake(conn net.Conn, req []byte) error {
-	buf := make([]byte, 68)
+func (p *peerConnection) receiveLoop() {
+	for {
+		lenBuf := make([]byte, 4)
 
-	conn.SetDeadline(time.Now().Add(time.Second * 5))
-	bytesRead, err := io.ReadFull(conn, buf)
-	conn.SetDeadline(time.Time{})
+		bytesRead, err := io.ReadFull(p.sock, lenBuf)
+		if err != nil || bytesRead < 4 {
+			p.cancel()
+			return
+		}
 
-	if err != nil {
-		return Peer_bad_handshake_err
+		length := binary.BigEndian.Uint32(lenBuf)
+		messBuf := make([]byte, length)
+
+		bytesRead, err = io.ReadFull(p.sock, messBuf)
+
+		if err != nil || bytesRead < int(length) {
+			p.cancel()
+			return
+		}
+
+		input := []byte{}
+		input = append(input, lenBuf...)
+		input = append(input, messBuf...)
+
+		mess, err := fromNetwork(input)
+		mess.Peer = p
+		p.in <- mess
 	}
-
-	if bytesRead < 68 {
-		return Peer_bad_handshake_err
-	}
-
-	if !bytes.Equal(buf[:20], req[:20]) {
-		return Peer_bad_handshake_err
-	}
-
-	if !bytes.Equal(buf[29:49], req[29:49]) {
-		return Peer_bad_handshake_err
-	}
-
-	return nil
 }
 
-func sendHandshake(conn net.Conn, ih, pid [20]byte) ([]byte, error) {
-	handshake := []byte{
-		0x13,
-		'B', 'i', 't',
-		'T', 'o', 'r', 'r', 'e', 'n', 't',
-		' ',
-		'p', 'r', 'o', 't', 'o', 'c', 'o', 'l',
-		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+func (p *peerConnection) handleMessage(mess PeerMessage) {
+	switch mess.Kind {
+	case Choke:
+		{
+			if mess.Payload != nil {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
+				p.cancel()
+				return
+			}
+			p.AmChoked = true
+		}
+	case Unchoke:
+		{
+			if mess.Payload != nil {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
+				p.cancel()
+				return
+			}
+			p.AmChoked = false
+		}
+	case Interested:
+		{
+			if mess.Payload != nil {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
+				p.cancel()
+				return
+			}
+			p.AmInteresting = true
+		}
+	case Uninterested:
+		{
+			if mess.Payload != nil {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
+				p.cancel()
+				return
+			}
+			p.AmInteresting = false
+		}
+	case Have:
+		{
+			idx := binary.LittleEndian.Uint32(mess.Payload)
+			byteIdx := idx / 8
+			if byteIdx >= uint32(len(p.pieces)) {
+				fmt.Printf("PEER %v ERR -> %v %v:%v\n", string(p.Info.Pid.String()), "out of bounds index", byteIdx, uint32(len(p.pieces)))
+				p.cancel()
+				return
+			}
+			bitIdx := 7 - (idx % 8)
+			p.pieces[byteIdx] |= 1 << bitIdx
+			p.torr.PeerInbox <- mess
+		}
+	case Bitfield:
+		{
+			if p.bitfieldSent {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "double bitfield sent")
+				p.cancel()
+				return
+			}
+			p.bitfieldSent = true
+			p.pieces = []byte{}
+			p.pieces = append(p.pieces, mess.Payload...)
+		}
+	default:
+		{
+			p.torr.PeerInbox <- mess
+		}
 	}
-	handshake = append(handshake, ih[:]...)
-	handshake = append(handshake, pid[:]...)
-
-	err := utils.WriteFull(conn, handshake)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	return handshake, nil
 }

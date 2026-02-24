@@ -2,6 +2,8 @@ package main
 
 import (
 	"GoBit/internal/protocol"
+	"fmt"
+	"time"
 )
 
 func main() {
@@ -9,12 +11,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	peerMan := protocol.NewPeerManager()
-	torr := protocol.NewTorrent(file, peerMan)
-	peerMan.AddTorrent(torr)
 
-	torr.Start()
+	ses := protocol.NewSession()
+	torr := protocol.NewTorrent(file, ses)
 
+	ses.Start()
+	ses.AddTorrent(torr)
+
+	time.Sleep(7 * time.Second)
+	fmt.Println("EXPIRED")
+	ses.Stop()
 	for {
 	}
 }

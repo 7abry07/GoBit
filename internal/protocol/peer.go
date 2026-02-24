@@ -3,6 +3,6 @@ package protocol
 import "net/netip"
 
 type Peer struct {
-	PeerID [20]byte
+	Pid    PeerID
 	IpPort netip.AddrPort
 }

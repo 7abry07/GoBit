@@ -1,37 +1,53 @@
 package protocol
 
 import (
+	"GoBit/internal/utils"
+	"context"
 	"fmt"
 	"math"
+	"net"
+	"time"
 )
 
 type Torrent struct {
-	Info        TorrentFile
-	PeerMan     *PeerManager
-	PeerList    []*PeerConnection
-	TrackerList []*Tracker
+	ctx    context.Context
+	cancel context.CancelFunc
 
-	NewPeer    chan *PeerConnection
-	RemovePeer chan *PeerConnection
+	Ses         *Session
+	PeerList    []*peerConnection
+	TrackerList []*Tracker
+	Info        TorrentFile
+
+	NewPeer    chan *peerConnection
+	RemovePeer chan *peerConnection
 	PeerInbox  chan PeerMessage
 
 	TrackerReady chan *Tracker
 	TrackerInbox chan TrackerResult
 
-	Pieces []uint8
+	Download int64
+	Upload   int64
+	Left     int64
+	Pieces   []uint8
 }
 
-func NewTorrent(file TorrentFile, peerMan *PeerManager) *Torrent {
+func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent := Torrent{}
-	torrent.PeerMan = peerMan
+	torrent.ctx, torrent.cancel = context.WithCancel(ses.ctx)
+	torrent.Ses = ses
 	torrent.Info = file
-	torrent.PeerList = []*PeerConnection{}
+	torrent.PeerList = []*peerConnection{}
 	torrent.TrackerList = []*Tracker{}
-	torrent.NewPeer = make(chan *PeerConnection)
-	torrent.RemovePeer = make(chan *PeerConnection)
+	torrent.NewPeer = make(chan *peerConnection)
+	torrent.RemovePeer = make(chan *peerConnection)
 	torrent.PeerInbox = make(chan PeerMessage)
 	torrent.TrackerReady = make(chan *Tracker)
 	torrent.TrackerInbox = make(chan TrackerResult)
+	torrent.Download = 0
+	torrent.Upload = 0
+	torrent.Left = int64(len(file.Pieces) / 20)
+	bitfieldSize := uint64(math.Ceil(float64(len(file.Pieces) / 20)))
+	torrent.Pieces = make([]byte, bitfieldSize)
 
 	if file.AnnounceList != nil {
 		for tier, lst := range *file.AnnounceList {
@@ -49,41 +65,28 @@ func NewTorrent(file TorrentFile, peerMan *PeerManager) *Torrent {
 		}
 	}
 
-	bitfieldSize := uint64(math.Ceil(float64(len(file.Pieces) / 20)))
-	torrent.Pieces = make([]byte, bitfieldSize)
-
 	return &torrent
 }
 
 func (t *Torrent) Start() {
-	go t.trackerLoop()
-	go t.peerLoop()
-
+	go t.loop()
 	for _, announce := range t.TrackerList {
-		go t.AnnounceToTracker(announce, TrackerStarted)
+		go t.announceToTracker(announce, TrackerStarted)
 	}
 }
 
-func (t *Torrent) AnnounceToTracker(tracker *Tracker, event TrackerEventType) {
-	req := TrackerRequest{}
-	req.Compact = 1
-	req.Downloaded = 0
-	req.Uploaded = 0
-	req.Event = event
-	req.Infohash = t.Info.InfoHash
-	req.Kind = TrackerAnnounce
-	req.Left = 0
-	req.NoPID = 1
-	req.Numwant = 50
-	req.PeerID = t.PeerMan.PeerId
-	req.Port = t.PeerMan.Port
-
-	tracker.Out <- req
+func (t *Torrent) Stop() {
+	t.cancel()
 }
 
-func (t *Torrent) peerLoop() {
+func (t *Torrent) loop() {
 	for {
 		select {
+		case <-t.ctx.Done():
+			{
+				fmt.Println("TORRENT STOPPED")
+				return
+			}
 		case p := <-t.NewPeer:
 			{
 				t.PeerList = append(t.PeerList, p)
@@ -99,18 +102,12 @@ func (t *Torrent) peerLoop() {
 		case mess := <-t.PeerInbox:
 			{
 				_ = mess
+				fmt.Printf("type -> %v\npayload -> %v\npeer -> %v\n", mess.Kind, mess.Payload, string(mess.Peer.Info.Pid.String()))
 				// TODO
 			}
-		}
-	}
-}
-
-func (t *Torrent) trackerLoop() {
-	for {
-		select {
 		case ready := <-t.TrackerReady:
 			{
-				t.AnnounceToTracker(ready, TrackerNone)
+				t.announceToTracker(ready, TrackerNone)
 			}
 		case res := <-t.TrackerInbox:
 			{
@@ -118,9 +115,76 @@ func (t *Torrent) trackerLoop() {
 				} else if res.Val.Failure != nil {
 				} else {
 					fmt.Printf("next announce in -> %v\n", res.Val.Interval/60)
-					go t.PeerMan.DialPeers(t, res.Val.PeerList)
+					go t.DialPeers(res.Val.PeerList, t.Ses.PeerID)
 				}
 			}
 		}
 	}
+}
+
+func (t *Torrent) announceToTracker(tracker *Tracker, event TrackerEventType) {
+	req := TrackerRequest{}
+	req.Compact = 1
+	req.Downloaded = t.Download
+	req.Uploaded = t.Upload
+	req.Event = event
+	req.Infohash = t.Info.InfoHash
+	req.Kind = TrackerAnnounce
+	req.Left = t.Left
+	req.NoPID = 1
+	req.Numwant = 200
+	req.PeerID = t.Ses.PeerID
+	req.Port = t.Ses.Port
+
+	tracker.Out <- req
+	return
+}
+
+func (t *Torrent) DialPeers(peers []Peer, pid [20]byte) {
+	for _, p := range peers {
+		go t.DialPeer(p, pid)
+	}
+}
+
+func (t *Torrent) DialPeer(p Peer, pid [20]byte) {
+	handle := peerConnection{}
+	handle.ctx, handle.cancel = context.WithCancel(t.ctx)
+	handle.Info = p
+	handle.AmChoked = true
+	handle.IsChoked = true
+	handle.AmInteresting = false
+	handle.IsInteresting = false
+	handle.bitfieldSent = false
+	handle.Out = make(chan PeerMessage)
+	handle.in = make(chan PeerMessage)
+	handle.pieces = make([]uint8, len(t.Info.Pieces)/20)
+	handle.torr = t
+
+	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
+	if err != nil {
+		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
+		return
+	}
+
+	handshakeReq, err := utils.SendHandshake(conn, t.Info.InfoHash, pid)
+	if err != nil {
+		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
+		conn.Close()
+		return
+	}
+
+	pid, ok := utils.ReceiveHandshake(conn, handshakeReq)
+	if !ok {
+		fmt.Printf("CONNECTION FAILED -> %v\n", Peer_bad_handshake_err)
+		conn.Close()
+		return
+	}
+
+	handle.Info.Pid = pid
+	handle.sock = conn
+
+	go handle.loop()
+
+	fmt.Printf("CONNECTION SUCCESS -> %v\n", string(handle.Info.Pid.String()))
+	t.NewPeer <- &handle
 }

@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +16,9 @@ type TrackerResult struct {
 }
 
 type Tracker struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	TrackerID string
 	Announce  url.URL
 	Scrape    url.URL
@@ -47,6 +52,7 @@ func NewTracker(announce url.URL, tier uint8, torrent *Torrent) (*Tracker, error
 	t.torr = torrent
 	t.Tier = tier
 	t.previousInterval = 1800
+	t.ctx, t.cancel = context.WithCancel(torrent.ctx)
 
 	t.intervalTimer = time.NewTimer(time.Hour)
 	if !t.intervalTimer.Stop() {
@@ -59,14 +65,35 @@ func NewTracker(announce url.URL, tier uint8, torrent *Torrent) (*Tracker, error
 }
 
 func (t *Tracker) loop() {
-	select {
-	case req := <-t.Out:
-		{
-			go t.send(req)
+	go t.writeLoop()
+
+	for {
+		select {
+		case <-t.ctx.Done():
+			{
+				fmt.Printf("TRACKER REMOVED -> %v\n", t.Announce.String())
+				t.intervalTimer.Stop()
+				return
+			}
+		case _ = <-t.intervalTimer.C:
+			{
+				t.torr.TrackerReady <- t
+			}
 		}
-	case _ = <-t.intervalTimer.C:
-		{
-			t.torr.TrackerReady <- t
+	}
+}
+
+func (t *Tracker) writeLoop() {
+	for {
+		select {
+		case <-t.ctx.Done():
+			{
+				return
+			}
+		case req := <-t.Out:
+			{
+				go t.send(req)
+			}
 		}
 	}
 }

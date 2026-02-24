@@ -40,10 +40,7 @@ func TestHttpAnnounceRequest(t *testing.T) {
 	req.Port = 6881
 	req.Left = 4000
 
-	fullUrl, err := req.SerializeHttp(tracker)
-	if err != nil {
-		t.Errorf("unexpected error -> %v", err.Error())
-	}
+	fullUrl := req.SerializeHttp(tracker)
 
 	if fullUrl.Scheme != "http" {
 		t.Errorf("'scheme' expected: %v | got: %v", "http", fullUrl.Scheme)
