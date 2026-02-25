@@ -162,11 +162,11 @@ func TestBencodedPeers(t *testing.T) {
 		t.Errorf("'peer ip:port' expected: <%v>[%v] | got: <%v>[%v]", "255.255.255.255", 65535, parsed.PeerList[0].IpPort.Addr(), parsed.PeerList[0].IpPort.Port())
 	}
 
-	if parsed.PeerList[0].PeerID != [20]byte{
+	if parsed.PeerList[0].Pid != [20]byte{
 		0x7a, 0x1c, 0xe4, 0x92, 0x3f,
 		0xb8, 0x0d, 0x6e, 0x55, 0xa3,
 		0xdf, 0x21, 0x9b, 0x44, 0x78,
 		0xcc, 0x02, 0xf1, 0x6d, 0x90} {
-		t.Errorf("'peer id' expected: %v | got: %x", "\x7a\x1c\xe4\x92\x3f\xb8\x0d\x6e\x55\xa3\xdf\x21\x9b\x44\x78\xcc\x02\xf1\x6d\x90", parsed.PeerList[0].PeerID)
+		t.Errorf("'peer id' expected: %v | got: %x", "\x7a\x1c\xe4\x92\x3f\xb8\x0d\x6e\x55\xa3\xdf\x21\x9b\x44\x78\xcc\x02\xf1\x6d\x90", parsed.PeerList[0].Pid)
 	}
 }

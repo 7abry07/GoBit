@@ -4,9 +4,7 @@ import (
 	"GoBit/internal/utils"
 	"context"
 	"fmt"
-	"io"
 	"net"
-	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -53,14 +51,6 @@ func NewSession() *Session {
 	return &s
 }
 
-func (s *Session) Start() {
-	go s.loop()
-}
-
-func (s *Session) Stop() {
-	s.cancel()
-}
-
 func (s *Session) loop() {
 	go s.listenForPeers()
 	for {
@@ -92,63 +82,29 @@ func (s *Session) listenForPeers() {
 	}
 }
 
+func (s *Session) Start() {
+	go s.loop()
+}
+
+func (s *Session) Stop() {
+	s.cancel()
+}
+
 func (s *Session) AddTorrent(t *Torrent) {
 	s.Torrents[t.Info.InfoHash] = t
 	go t.Start()
 }
 
-func (s *Session) RemoveTorrent(t *Torrent) {
+func (s *Session) StopTorrent(t *Torrent) {
+	t.cancel()
 	delete(s.Torrents, t.Info.InfoHash)
 }
 
 func (s *Session) handshakePeer(conn net.Conn) {
-	buf := make([]byte, 68)
-	bytesRead, err := io.ReadFull(conn, buf)
-	if err != nil || bytesRead != 68 {
-		conn.Close()
-		return
-	}
-	if string(buf[0:20]) != "\x13BitTorrent protocol" {
-		conn.Close()
-		return
-	}
-
-	infohash := [20]byte(buf[29:49])
-	pid := [20]byte(buf[49:])
-
-	torrent, found := s.Torrents[infohash]
-	if !found {
-		conn.Close()
-		return
-	}
-
-	_, err = utils.SendHandshake(conn, infohash, s.PeerID)
+	peerConn, err := newIncomingPeerConnection(s, conn)
 	if err != nil {
-		conn.Close()
-		return
+		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
 	}
-
-	endpoint, err := netip.ParseAddrPort(conn.LocalAddr().String())
-	if err != nil {
-		panic(err)
-	}
-	peerInfo := Peer{Pid: pid, IpPort: endpoint}
-
-	peerConn := peerConnection{}
-	peerConn.ctx, peerConn.cancel = context.WithCancel(torrent.ctx)
-	peerConn.Info = peerInfo
-	peerConn.sock = conn
-	peerConn.bitfieldSent = false
-	peerConn.pieces = make([]uint8, len(torrent.Info.Pieces)/20)
-	peerConn.AmChoked = true
-	peerConn.IsChoked = true
-	peerConn.AmInteresting = false
-	peerConn.IsInteresting = false
-	peerConn.Out = make(chan PeerMessage)
-	peerConn.in = make(chan PeerMessage)
-	peerConn.torr = torrent
-
-	go peerConn.loop()
-
-	torrent.NewPeer <- &peerConn
+	fmt.Printf("CONNECTION SUCCESS -> %v\n", peerConn.Info.Pid.String())
+	peerConn.torr.NewPeer <- peerConn
 }

@@ -101,7 +101,10 @@ func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (Tracke
 			}
 
 			peerVal := Peer{}
-			peerVal.Pid = ([20]byte)(([]byte)(pid))
+			peerVal.Pid, err = NewPeerID(([]byte)(pid))
+			if err != nil {
+				panic(err)
+			}
 			peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port))
 			resp.PeerList = append(resp.PeerList, peerVal)
 		}

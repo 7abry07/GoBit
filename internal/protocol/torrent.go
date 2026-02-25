@@ -1,12 +1,9 @@
 package protocol
 
 import (
-	"GoBit/internal/utils"
 	"context"
 	"fmt"
 	"math"
-	"net"
-	"time"
 )
 
 type Torrent struct {
@@ -68,17 +65,6 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	return &torrent
 }
 
-func (t *Torrent) Start() {
-	go t.loop()
-	for _, announce := range t.TrackerList {
-		go t.announceToTracker(announce, TrackerStarted)
-	}
-}
-
-func (t *Torrent) Stop() {
-	t.cancel()
-}
-
 func (t *Torrent) loop() {
 	for {
 		select {
@@ -115,11 +101,39 @@ func (t *Torrent) loop() {
 				} else if res.Val.Failure != nil {
 				} else {
 					fmt.Printf("next announce in -> %v\n", res.Val.Interval/60)
-					go t.DialPeers(res.Val.PeerList, t.Ses.PeerID)
+					go t.DialPeers(res.Val.PeerList)
 				}
 			}
 		}
 	}
+}
+
+func (t *Torrent) Start() {
+	go t.loop()
+	for _, announce := range t.TrackerList {
+		go t.announceToTracker(announce, TrackerStarted)
+	}
+}
+
+func (t *Torrent) Stop() {
+	t.cancel()
+}
+
+func (t *Torrent) DialPeers(peers []Peer) {
+	for _, p := range peers {
+		go t.DialPeer(p)
+	}
+}
+
+func (t *Torrent) DialPeer(p Peer) {
+	conn, err := newPeerConnection(t, p, t.Ses.PeerID)
+	if err != nil {
+		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
+		return
+	}
+
+	fmt.Printf("CONNECTION SUCCESS -> %v\n", string(conn.Info.Pid.String()))
+	t.NewPeer <- conn
 }
 
 func (t *Torrent) announceToTracker(tracker *Tracker, event TrackerEventType) {
@@ -138,53 +152,4 @@ func (t *Torrent) announceToTracker(tracker *Tracker, event TrackerEventType) {
 
 	tracker.Out <- req
 	return
-}
-
-func (t *Torrent) DialPeers(peers []Peer, pid [20]byte) {
-	for _, p := range peers {
-		go t.DialPeer(p, pid)
-	}
-}
-
-func (t *Torrent) DialPeer(p Peer, pid [20]byte) {
-	handle := peerConnection{}
-	handle.ctx, handle.cancel = context.WithCancel(t.ctx)
-	handle.Info = p
-	handle.AmChoked = true
-	handle.IsChoked = true
-	handle.AmInteresting = false
-	handle.IsInteresting = false
-	handle.bitfieldSent = false
-	handle.Out = make(chan PeerMessage)
-	handle.in = make(chan PeerMessage)
-	handle.pieces = make([]uint8, len(t.Info.Pieces)/20)
-	handle.torr = t
-
-	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
-	if err != nil {
-		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
-		return
-	}
-
-	handshakeReq, err := utils.SendHandshake(conn, t.Info.InfoHash, pid)
-	if err != nil {
-		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
-		conn.Close()
-		return
-	}
-
-	pid, ok := utils.ReceiveHandshake(conn, handshakeReq)
-	if !ok {
-		fmt.Printf("CONNECTION FAILED -> %v\n", Peer_bad_handshake_err)
-		conn.Close()
-		return
-	}
-
-	handle.Info.Pid = pid
-	handle.sock = conn
-
-	go handle.loop()
-
-	fmt.Printf("CONNECTION SUCCESS -> %v\n", string(handle.Info.Pid.String()))
-	t.NewPeer <- &handle
 }

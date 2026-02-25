@@ -7,13 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
+	"time"
 )
 
 type peerConnection struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	sock net.Conn
+	conn net.Conn
 	torr *Torrent
 
 	in  chan PeerMessage
@@ -29,6 +31,97 @@ type peerConnection struct {
 	bitfieldSent  bool
 }
 
+func newPeerConnection(t *Torrent, p Peer, pid PeerID) (*peerConnection, error) {
+	peerConn := peerConnection{}
+	peerConn.ctx, peerConn.cancel = context.WithCancel(t.ctx)
+	peerConn.Info = p
+	peerConn.AmChoked = true
+	peerConn.IsChoked = true
+	peerConn.AmInteresting = false
+	peerConn.IsInteresting = false
+	peerConn.bitfieldSent = false
+	peerConn.Out = make(chan PeerMessage)
+	peerConn.in = make(chan PeerMessage)
+	peerConn.pieces = make([]uint8, len(t.Info.Pieces)/20)
+	peerConn.torr = t
+
+	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
+	if err != nil {
+		return nil, err
+	}
+
+	handshakeReq, err := utils.SendHandshake(conn, t.Info.InfoHash, pid)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	pid, ok := utils.ReceiveHandshake(conn, handshakeReq)
+	if !ok {
+		conn.Close()
+		return nil, err
+	}
+
+	peerConn.Info.Pid = pid
+	peerConn.conn = conn
+
+	go peerConn.loop()
+
+	return &peerConn, nil
+}
+
+func newIncomingPeerConnection(s *Session, conn net.Conn) (*peerConnection, error) {
+	buf := make([]byte, 68)
+	bytesRead, err := io.ReadFull(conn, buf)
+	if err != nil || bytesRead != 68 {
+		conn.Close()
+		return nil, err
+	}
+	if string(buf[0:20]) != "\x13BitTorrent protocol" {
+		conn.Close()
+		return nil, err
+	}
+
+	infohash := [20]byte(buf[29:49])
+	pid := [20]byte(buf[49:])
+
+	torrent, found := s.Torrents[infohash]
+	if !found {
+		conn.Close()
+		return nil, err
+	}
+
+	_, err = utils.SendHandshake(conn, infohash, s.PeerID)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	endpoint, err := netip.ParseAddrPort(conn.LocalAddr().String())
+	if err != nil {
+		panic(err)
+	}
+	peerInfo := Peer{Pid: pid, IpPort: endpoint}
+
+	peerConn := peerConnection{}
+	peerConn.ctx, peerConn.cancel = context.WithCancel(torrent.ctx)
+	peerConn.Info = peerInfo
+	peerConn.conn = conn
+	peerConn.bitfieldSent = false
+	peerConn.pieces = make([]uint8, len(torrent.Info.Pieces)/20)
+	peerConn.AmChoked = true
+	peerConn.IsChoked = true
+	peerConn.AmInteresting = false
+	peerConn.IsInteresting = false
+	peerConn.Out = make(chan PeerMessage)
+	peerConn.in = make(chan PeerMessage)
+	peerConn.torr = torrent
+
+	go peerConn.loop()
+
+	return &peerConn, nil
+}
+
 func (p *peerConnection) loop() {
 	go p.receiveLoop()
 
@@ -37,7 +130,7 @@ func (p *peerConnection) loop() {
 		case <-p.ctx.Done():
 			{
 				fmt.Printf("PEER REMOVED -> %v\n", string(p.Info.Pid.String()))
-				p.sock.Close()
+				p.conn.Close()
 				return
 			}
 		case mess := <-p.Out:
@@ -60,14 +153,14 @@ func (p *peerConnection) send(mess PeerMessage) error {
 	if err != nil {
 		return err
 	}
-	return utils.WriteFull(p.sock, content)
+	return utils.WriteFull(p.conn, content)
 }
 
 func (p *peerConnection) receiveLoop() {
 	for {
 		lenBuf := make([]byte, 4)
 
-		bytesRead, err := io.ReadFull(p.sock, lenBuf)
+		bytesRead, err := io.ReadFull(p.conn, lenBuf)
 		if err != nil || bytesRead < 4 {
 			p.cancel()
 			return
@@ -76,7 +169,7 @@ func (p *peerConnection) receiveLoop() {
 		length := binary.BigEndian.Uint32(lenBuf)
 		messBuf := make([]byte, length)
 
-		bytesRead, err = io.ReadFull(p.sock, messBuf)
+		bytesRead, err = io.ReadFull(p.conn, messBuf)
 
 		if err != nil || bytesRead < int(length) {
 			p.cancel()

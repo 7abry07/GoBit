@@ -65,8 +65,6 @@ func NewTracker(announce url.URL, tier uint8, torrent *Torrent) (*Tracker, error
 }
 
 func (t *Tracker) loop() {
-	go t.writeLoop()
-
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -75,31 +73,16 @@ func (t *Tracker) loop() {
 				t.intervalTimer.Stop()
 				return
 			}
+		case req := <-t.Out:
+			{
+				go t.send(req)
+			}
 		case _ = <-t.intervalTimer.C:
 			{
 				t.torr.TrackerReady <- t
 			}
 		}
 	}
-}
-
-func (t *Tracker) writeLoop() {
-	for {
-		select {
-		case <-t.ctx.Done():
-			{
-				return
-			}
-		case req := <-t.Out:
-			{
-				go t.send(req)
-			}
-		}
-	}
-}
-
-func (t *Tracker) schedule(seconds int) {
-	t.intervalTimer.Reset(time.Second * time.Duration(seconds))
 }
 
 func (t *Tracker) send(req TrackerRequest) {
@@ -140,4 +123,8 @@ func (t *Tracker) send(req TrackerRequest) {
 	default:
 		panic(Tracker_invalid_scheme_err)
 	}
+}
+
+func (t *Tracker) schedule(seconds int) {
+	t.intervalTimer.Reset(time.Second * time.Duration(seconds))
 }
