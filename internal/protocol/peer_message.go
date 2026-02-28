@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 )
 
-type PeerMessageType uint8
+type peerMessageType uint8
 
 const (
-	Choke PeerMessageType = iota
+	Choke peerMessageType = iota
 	Unchoke
 	Interested
 	Uninterested
@@ -19,16 +19,16 @@ const (
 	KeepAlive
 )
 
-type PeerMessage struct {
+type peerMessage struct {
 	Peer    *peerConnection
-	Kind    PeerMessageType
+	Kind    peerMessageType
 	Payload []byte
 }
 
-func fromNetwork(input []byte) (PeerMessage, error) {
-	mess := PeerMessage{}
+func fromNetwork(input []byte) (peerMessage, error) {
+	mess := peerMessage{}
 	if len(input) < 4 {
-		return PeerMessage{}, Peer_bad_message_err
+		return peerMessage{}, Peer_bad_message_err
 	}
 
 	lengthBE := input[0:4]
@@ -38,7 +38,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	length := binary.LittleEndian.Uint32(lengthLE)
 
 	if len(input) < int(length)+4 {
-		return PeerMessage{}, Peer_bad_message_err
+		return peerMessage{}, Peer_bad_message_err
 	}
 
 	if length == 0 {
@@ -47,7 +47,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 		return mess, nil
 	}
 
-	kind := PeerMessageType(input[4])
+	kind := peerMessageType(input[4])
 	mess.Kind = kind
 	if kind < Have {
 		mess.Payload = nil
@@ -57,7 +57,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	case Have:
 		{
 			if length != 5 || len(input) != 9 {
-				return PeerMessage{}, Peer_bad_message_err
+				return peerMessage{}, Peer_bad_message_err
 			}
 			mess.Kind = Have
 			pidx := binary.BigEndian.Uint32(input[5:])
@@ -71,7 +71,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	case Request:
 		{
 			if length != 13 || len(input) != 17 {
-				return PeerMessage{}, Peer_bad_message_err
+				return peerMessage{}, Peer_bad_message_err
 			}
 			mess.Kind = Request
 			idx := binary.BigEndian.Uint32(input[5:9])
@@ -85,7 +85,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	case Piece:
 		{
 			if length < 9 || len(input) < 13 {
-				return PeerMessage{}, Peer_bad_message_err
+				return peerMessage{}, Peer_bad_message_err
 			}
 			mess.Kind = Piece
 			idx := binary.BigEndian.Uint32(input[5:9])
@@ -93,7 +93,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 			block := input[13:]
 
 			if length != uint32(len(block)+9) || len(input) < len(block)+13 {
-				return PeerMessage{}, Peer_bad_message_err
+				return peerMessage{}, Peer_bad_message_err
 			}
 
 			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
@@ -103,7 +103,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	case Cancel:
 		{
 			if length != 13 || len(input) != 17 {
-				return PeerMessage{}, Peer_bad_message_err
+				return peerMessage{}, Peer_bad_message_err
 			}
 			mess.Kind = Cancel
 			idx := binary.BigEndian.Uint32(input[5:9])
@@ -119,7 +119,7 @@ func fromNetwork(input []byte) (PeerMessage, error) {
 	return mess, nil
 }
 
-func (m PeerMessage) ToNetwork() ([]byte, error) {
+func (m peerMessage) ToNetwork() ([]byte, error) {
 	if m.Kind < Have && m.Payload != nil ||
 		m.Kind > Uninterested && m.Payload == nil {
 		return []byte{}, Peer_bad_message_err

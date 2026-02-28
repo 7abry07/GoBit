@@ -101,7 +101,7 @@ func (s *Session) StopTorrent(t *Torrent) {
 }
 
 func (s *Session) handshakePeer(conn net.Conn) {
-	peerConn, err := newIncomingPeerConnection(s, conn)
+	peerConn, err := newIncomingPeerConnection(s, conn, 5)
 	if err != nil {
 		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
 	}

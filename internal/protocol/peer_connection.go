@@ -12,14 +12,18 @@ import (
 )
 
 type peerConnection struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx           context.Context
+	cancel        context.CancelFunc
+	keepAliveSelf *time.Timer
+	keepAlivePeer *time.Timer
 
 	conn net.Conn
 	torr *Torrent
 
-	in  chan PeerMessage
-	Out chan PeerMessage
+	in  chan peerMessage
+	out chan peerMessage
+
+	requestQueue chan PeerRequest
 
 	pieces []uint8
 
@@ -31,7 +35,7 @@ type peerConnection struct {
 	bitfieldSent  bool
 }
 
-func newPeerConnection(t *Torrent, p Peer, pid PeerID) (*peerConnection, error) {
+func newPeerConnection(t *Torrent, p Peer, pid PeerID, queueSize int) (*peerConnection, error) {
 	peerConn := peerConnection{}
 	peerConn.ctx, peerConn.cancel = context.WithCancel(t.ctx)
 	peerConn.Info = p
@@ -40,9 +44,12 @@ func newPeerConnection(t *Torrent, p Peer, pid PeerID) (*peerConnection, error) 
 	peerConn.AmInteresting = false
 	peerConn.IsInteresting = false
 	peerConn.bitfieldSent = false
-	peerConn.Out = make(chan PeerMessage)
-	peerConn.in = make(chan PeerMessage)
+	peerConn.out = make(chan peerMessage)
+	peerConn.in = make(chan peerMessage)
+	peerConn.requestQueue = make(chan PeerRequest, queueSize)
 	peerConn.pieces = make([]uint8, len(t.Info.Pieces)/20)
+	peerConn.keepAliveSelf = time.NewTimer(time.Minute * 2)
+	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 2)
 	peerConn.torr = t
 
 	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
@@ -70,7 +77,7 @@ func newPeerConnection(t *Torrent, p Peer, pid PeerID) (*peerConnection, error) 
 	return &peerConn, nil
 }
 
-func newIncomingPeerConnection(s *Session, conn net.Conn) (*peerConnection, error) {
+func newIncomingPeerConnection(s *Session, conn net.Conn, queueSize int) (*peerConnection, error) {
 	buf := make([]byte, 68)
 	bytesRead, err := io.ReadFull(conn, buf)
 	if err != nil || bytesRead != 68 {
@@ -113,8 +120,11 @@ func newIncomingPeerConnection(s *Session, conn net.Conn) (*peerConnection, erro
 	peerConn.IsChoked = true
 	peerConn.AmInteresting = false
 	peerConn.IsInteresting = false
-	peerConn.Out = make(chan PeerMessage)
-	peerConn.in = make(chan PeerMessage)
+	peerConn.requestQueue = make(chan PeerRequest, queueSize)
+	peerConn.out = make(chan peerMessage)
+	peerConn.in = make(chan peerMessage)
+	peerConn.keepAliveSelf = time.NewTimer(time.Minute * 2)
+	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 2)
 	peerConn.torr = torrent
 
 	go peerConn.loop()
@@ -133,27 +143,36 @@ func (p *peerConnection) loop() {
 				p.conn.Close()
 				return
 			}
-		case mess := <-p.Out:
+		case mess := <-p.out:
 			{
-				err := p.send(mess)
-				if err != nil {
-					p.cancel()
-				}
+				go p.send(mess)
 			}
 		case mess := <-p.in:
 			{
 				go p.handleMessage(mess)
 			}
+		case req := <-p.requestQueue:
+			{
+				mess := peerMessage{}
+				mess.Kind = Request
+				binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
+				binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
+				binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+				p.out <- mess
+			}
+		case <-p.keepAliveSelf.C:
+			{
+				mess := peerMessage{}
+				mess.Kind = KeepAlive
+				mess.Payload = nil
+				p.out <- mess
+			}
+		case <-p.keepAlivePeer.C:
+			{
+				p.cancel()
+			}
 		}
 	}
-}
-
-func (p *peerConnection) send(mess PeerMessage) error {
-	content, err := mess.ToNetwork()
-	if err != nil {
-		return err
-	}
-	return utils.WriteFull(p.conn, content)
 }
 
 func (p *peerConnection) receiveLoop() {
@@ -186,8 +205,81 @@ func (p *peerConnection) receiveLoop() {
 	}
 }
 
-func (p *peerConnection) handleMessage(mess PeerMessage) {
+func (p *peerConnection) SendBlock(res PeerBlockResponse) {
+	mess := peerMessage{}
+	mess.Kind = Piece
+	binary.LittleEndian.AppendUint32(mess.Payload, res.Idx)
+	binary.LittleEndian.AppendUint32(mess.Payload, res.Begin)
+	mess.Payload = append(mess.Payload, res.Block...)
+	p.out <- mess
+}
+
+func (p *peerConnection) SendHave(idx uint32) {
+	mess := peerMessage{}
+	mess.Kind = Have
+	binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	p.out <- mess
+}
+
+func (p *peerConnection) SendBitfield(bitfield []uint8) {
+	mess := peerMessage{}
+	mess.Kind = Bitfield
+	mess.Payload = bitfield
+	p.out <- mess
+}
+
+func (p *peerConnection) CancelRequest(req PeerRequest) {
+	mess := peerMessage{}
+	mess.Kind = Cancel
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+	p.out <- mess
+}
+
+func (p *peerConnection) QueueRequest(req PeerRequest) {
+	p.requestQueue <- req
+}
+
+func (p *peerConnection) SetInterested(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Interested
+	} else {
+		mess.Kind = Interested
+	}
+	mess.Payload = nil
+	p.out <- mess
+}
+
+func (p *peerConnection) SetChoked(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Choke
+	} else {
+		mess.Kind = Unchoke
+	}
+	mess.Payload = nil
+	p.out <- mess
+}
+
+func (p *peerConnection) send(mess peerMessage) {
+	content, err := mess.ToNetwork()
+	if err != nil {
+		p.cancel()
+	}
+	err = utils.WriteFull(p.conn, content)
+	if err != nil {
+		p.cancel()
+	}
+}
+
+func (p *peerConnection) handleMessage(mess peerMessage) {
 	switch mess.Kind {
+	case KeepAlive:
+		{
+			p.keepAlivePeer.Reset(time.Minute * 2)
+		}
 	case Choke:
 		{
 			if mess.Payload != nil {

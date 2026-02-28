@@ -17,7 +17,7 @@ type Torrent struct {
 
 	NewPeer    chan *peerConnection
 	RemovePeer chan *peerConnection
-	PeerInbox  chan PeerMessage
+	PeerInbox  chan peerMessage
 
 	TrackerReady chan *Tracker
 	TrackerInbox chan TrackerResult
@@ -37,7 +37,7 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.TrackerList = []*Tracker{}
 	torrent.NewPeer = make(chan *peerConnection)
 	torrent.RemovePeer = make(chan *peerConnection)
-	torrent.PeerInbox = make(chan PeerMessage)
+	torrent.PeerInbox = make(chan peerMessage)
 	torrent.TrackerReady = make(chan *Tracker)
 	torrent.TrackerInbox = make(chan TrackerResult)
 	torrent.Download = 0
@@ -126,7 +126,7 @@ func (t *Torrent) DialPeers(peers []Peer) {
 }
 
 func (t *Torrent) DialPeer(p Peer) {
-	conn, err := newPeerConnection(t, p, t.Ses.PeerID)
+	conn, err := newPeerConnection(t, p, t.Ses.PeerID, 5)
 	if err != nil {
 		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
 		return
