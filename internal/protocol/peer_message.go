@@ -120,10 +120,6 @@ func fromNetwork(input []byte) (peerMessage, error) {
 }
 
 func (m peerMessage) ToNetwork() ([]byte, error) {
-	if m.Kind < Have && m.Payload != nil ||
-		m.Kind > Uninterested && m.Payload == nil {
-		return []byte{}, Peer_bad_message_err
-	}
 	output := []byte{}
 	length := make([]byte, 4)
 
@@ -137,6 +133,16 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 	content := []byte{}
 
 	switch m.Kind {
+	case Choke:
+		fallthrough
+	case Unchoke:
+		fallthrough
+	case Interested:
+		fallthrough
+	case Uninterested:
+		if m.Payload != nil {
+			return []byte{}, Peer_bad_message_err
+		}
 	case Have:
 		{
 			if len(m.Payload) != 4 {
@@ -197,5 +203,5 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 
 	output = append(output, content...)
 
-	return content, nil
+	return output, nil
 }

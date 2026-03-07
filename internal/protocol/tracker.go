@@ -79,7 +79,7 @@ func (t *Tracker) loop() {
 			}
 		case _ = <-t.intervalTimer.C:
 			{
-				t.torr.TrackerReady <- t
+				t.torr.SignalTrackerReady(t)
 			}
 		}
 	}
@@ -94,19 +94,19 @@ func (t *Tracker) send(req TrackerRequest) {
 			fullUrl := req.SerializeHttp(*t)
 			httpResp, err := http.Get(fullUrl.String())
 			if err != nil {
-				t.torr.TrackerInbox <- TrackerResult{err, defaultResp}
+				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
 				go t.schedule(t.previousInterval)
 				return
 			}
 			content, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				t.torr.TrackerInbox <- TrackerResult{err, defaultResp}
+				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
 				go t.schedule(t.previousInterval)
 				return
 			}
 			resp, err := DeserializeTrackerResponseHttp(content, req)
 			if err != nil {
-				t.torr.TrackerInbox <- TrackerResult{err, defaultResp}
+				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
 				go t.schedule(t.previousInterval)
 				return
 			}
@@ -114,12 +114,12 @@ func (t *Tracker) send(req TrackerRequest) {
 				t.TrackerID = *resp.trackerID
 			}
 
-			t.torr.TrackerInbox <- TrackerResult{nil, resp}
+			t.torr.ReceiveTracker(TrackerResult{nil, resp})
 			go t.schedule(int(resp.Interval))
 			t.previousInterval = int(resp.Interval)
 		}
 	case "udp":
-		t.torr.TrackerInbox <- TrackerResult{Tracker_invalid_scheme_err, TrackerResponse{}}
+		t.torr.ReceiveTracker(TrackerResult{Tracker_invalid_scheme_err, TrackerResponse{}})
 	default:
 		panic(Tracker_invalid_scheme_err)
 	}

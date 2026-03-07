@@ -2,8 +2,8 @@ package main
 
 import (
 	"GoBit/internal/protocol"
-	"fmt"
-	"time"
+	// "fmt"
+	// "time"
 )
 
 func main() {
@@ -18,9 +18,9 @@ func main() {
 	ses.Start()
 	ses.AddTorrent(torr)
 
-	time.Sleep(7 * time.Second)
-	fmt.Println("EXPIRED")
-	ses.StopTorrent(torr)
+	// time.Sleep(7 * time.Second)
+	// fmt.Println("EXPIRED")
+	// ses.StopTorrent(torr)
 
 	for {
 	}

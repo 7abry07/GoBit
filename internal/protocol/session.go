@@ -106,5 +106,5 @@ func (s *Session) handshakePeer(conn net.Conn) {
 		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
 	}
 	fmt.Printf("CONNECTION SUCCESS -> %v\n", peerConn.Info.Pid.String())
-	peerConn.torr.NewPeer <- peerConn
+	peerConn.torr.AddPeer(peerConn)
 }

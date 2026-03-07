@@ -4,6 +4,7 @@ import (
 	"GoBit/internal/utils"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,9 +14,11 @@ import (
 
 type peerConnection struct {
 	ctx           context.Context
-	cancel        context.CancelFunc
-	keepAliveSelf *time.Timer
+	cancel        context.CancelCauseFunc
+	keepAliveSelf *time.Ticker
 	keepAlivePeer *time.Timer
+	keepAliveFreq time.Duration
+	peerTimeout   time.Duration
 
 	conn net.Conn
 	torr *Torrent
@@ -25,7 +28,7 @@ type peerConnection struct {
 
 	requestQueue chan PeerRequest
 
-	pieces []uint8
+	pieces *utils.Bitfield
 
 	Info          Peer
 	IsChoked      bool
@@ -37,7 +40,7 @@ type peerConnection struct {
 
 func newPeerConnection(t *Torrent, p Peer, pid PeerID, queueSize int) (*peerConnection, error) {
 	peerConn := peerConnection{}
-	peerConn.ctx, peerConn.cancel = context.WithCancel(t.ctx)
+	peerConn.ctx, peerConn.cancel = context.WithCancelCause(t.ctx)
 	peerConn.Info = p
 	peerConn.AmChoked = true
 	peerConn.IsChoked = true
@@ -47,9 +50,11 @@ func newPeerConnection(t *Torrent, p Peer, pid PeerID, queueSize int) (*peerConn
 	peerConn.out = make(chan peerMessage)
 	peerConn.in = make(chan peerMessage)
 	peerConn.requestQueue = make(chan PeerRequest, queueSize)
-	peerConn.pieces = make([]uint8, len(t.Info.Pieces)/20)
-	peerConn.keepAliveSelf = time.NewTimer(time.Minute * 2)
-	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 2)
+	peerConn.pieces = utils.NewBitfield(uint32(len(t.Info.Pieces) / 20))
+	peerConn.keepAliveFreq = time.Minute
+	peerConn.peerTimeout = time.Minute * 3
+	peerConn.keepAliveSelf = time.NewTicker(peerConn.keepAliveFreq)
+	peerConn.keepAlivePeer = time.NewTimer(peerConn.peerTimeout)
 	peerConn.torr = t
 
 	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
@@ -66,13 +71,11 @@ func newPeerConnection(t *Torrent, p Peer, pid PeerID, queueSize int) (*peerConn
 	pid, ok := utils.ReceiveHandshake(conn, handshakeReq)
 	if !ok {
 		conn.Close()
-		return nil, err
+		return nil, Peer_bad_handshake_err
 	}
 
 	peerConn.Info.Pid = pid
 	peerConn.conn = conn
-
-	go peerConn.loop()
 
 	return &peerConn, nil
 }
@@ -111,11 +114,11 @@ func newIncomingPeerConnection(s *Session, conn net.Conn, queueSize int) (*peerC
 	peerInfo := Peer{Pid: pid, IpPort: endpoint}
 
 	peerConn := peerConnection{}
-	peerConn.ctx, peerConn.cancel = context.WithCancel(torrent.ctx)
+	peerConn.ctx, peerConn.cancel = context.WithCancelCause(torrent.ctx)
 	peerConn.Info = peerInfo
 	peerConn.conn = conn
 	peerConn.bitfieldSent = false
-	peerConn.pieces = make([]uint8, len(torrent.Info.Pieces)/20)
+	peerConn.pieces = utils.NewBitfield(uint32(len(torrent.Info.Pieces) / 20))
 	peerConn.AmChoked = true
 	peerConn.IsChoked = true
 	peerConn.AmInteresting = false
@@ -123,33 +126,52 @@ func newIncomingPeerConnection(s *Session, conn net.Conn, queueSize int) (*peerC
 	peerConn.requestQueue = make(chan PeerRequest, queueSize)
 	peerConn.out = make(chan peerMessage)
 	peerConn.in = make(chan peerMessage)
-	peerConn.keepAliveSelf = time.NewTimer(time.Minute * 2)
-	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 2)
+	peerConn.keepAliveSelf = time.NewTicker(time.Minute)
+	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 3)
 	peerConn.torr = torrent
-
-	go peerConn.loop()
 
 	return &peerConn, nil
 }
 
-func (p *peerConnection) loop() {
+func (p *peerConnection) start() {
+	go p.loop()
+}
+
+func (p *peerConnection) readLoop() {
 	go p.receiveLoop()
 
 	for {
 		select {
 		case <-p.ctx.Done():
+			return
+		case mess := <-p.in:
+			go p.handleMessage(mess)
+		}
+	}
+}
+func (p *peerConnection) writeLoop() {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case mess := <-p.out:
+			go p.send(mess)
+		}
+	}
+}
+
+func (p *peerConnection) loop() {
+	go p.readLoop()
+	go p.writeLoop()
+
+	for {
+		select {
+		case <-p.ctx.Done():
 			{
-				fmt.Printf("PEER REMOVED -> %v\n", string(p.Info.Pid.String()))
+				fmt.Printf("PEER REMOVED -> %v REASON -> %v\n", string(p.Info.Pid.String()), context.Cause(p.ctx))
+				p.torr.RemovePeer(p)
 				p.conn.Close()
 				return
-			}
-		case mess := <-p.out:
-			{
-				go p.send(mess)
-			}
-		case mess := <-p.in:
-			{
-				go p.handleMessage(mess)
 			}
 		case req := <-p.requestQueue:
 			{
@@ -166,10 +188,13 @@ func (p *peerConnection) loop() {
 				mess.Kind = KeepAlive
 				mess.Payload = nil
 				p.out <- mess
+				p.keepAliveSelf.Reset(p.keepAliveFreq)
+				fmt.Printf("KEEP ALIVE SENT -> %v\n", p.Info.Pid.String())
 			}
 		case <-p.keepAlivePeer.C:
 			{
-				p.cancel()
+				fmt.Printf("PEER ERROR TIMEOUT -> %v\n", p.Info.Pid.String())
+				p.cancel(Peer_timeout)
 			}
 		}
 	}
@@ -177,32 +202,42 @@ func (p *peerConnection) loop() {
 
 func (p *peerConnection) receiveLoop() {
 	for {
-		lenBuf := make([]byte, 4)
-
-		bytesRead, err := io.ReadFull(p.conn, lenBuf)
-		if err != nil || bytesRead < 4 {
-			p.cancel()
+		select {
+		case <-p.ctx.Done():
 			return
+		default:
+			lenBuf := make([]byte, 4)
+
+			_, err := io.ReadFull(p.conn, lenBuf)
+			if err != nil {
+				p.cancel(errors.Join(Peer_read_err, err))
+				return
+			}
+
+			length := binary.BigEndian.Uint32(lenBuf)
+			messBuf := make([]byte, length)
+
+			_, err = io.ReadFull(p.conn, messBuf)
+
+			if err != nil {
+				p.cancel(errors.Join(Peer_read_err, err))
+				return
+			}
+
+			input := []byte{}
+			input = append(input, lenBuf...)
+			input = append(input, messBuf...)
+
+			mess, err := fromNetwork(input)
+			mess.Peer = p
+
+			p.in <- mess
 		}
-
-		length := binary.BigEndian.Uint32(lenBuf)
-		messBuf := make([]byte, length)
-
-		bytesRead, err = io.ReadFull(p.conn, messBuf)
-
-		if err != nil || bytesRead < int(length) {
-			p.cancel()
-			return
-		}
-
-		input := []byte{}
-		input = append(input, lenBuf...)
-		input = append(input, messBuf...)
-
-		mess, err := fromNetwork(input)
-		mess.Peer = p
-		p.in <- mess
 	}
+}
+
+func (p *peerConnection) HasPiece(idx uint32) bool {
+	return p.pieces.IsSet(idx)
 }
 
 func (p *peerConnection) SendBlock(res PeerBlockResponse) {
@@ -221,24 +256,11 @@ func (p *peerConnection) SendHave(idx uint32) {
 	p.out <- mess
 }
 
-func (p *peerConnection) SendBitfield(bitfield []uint8) {
+func (p *peerConnection) SendBitfield(bitfield *utils.Bitfield) {
 	mess := peerMessage{}
 	mess.Kind = Bitfield
-	mess.Payload = bitfield
+	mess.Payload = bitfield.Data()
 	p.out <- mess
-}
-
-func (p *peerConnection) CancelRequest(req PeerRequest) {
-	mess := peerMessage{}
-	mess.Kind = Cancel
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
-	p.out <- mess
-}
-
-func (p *peerConnection) QueueRequest(req PeerRequest) {
-	p.requestQueue <- req
 }
 
 func (p *peerConnection) SetInterested(v bool) {
@@ -263,14 +285,27 @@ func (p *peerConnection) SetChoked(v bool) {
 	p.out <- mess
 }
 
+func (p *peerConnection) CancelRequest(req PeerRequest) {
+	mess := peerMessage{}
+	mess.Kind = Cancel
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+	p.out <- mess
+}
+
+func (p *peerConnection) QueueRequest(req PeerRequest) {
+	p.requestQueue <- req
+}
+
 func (p *peerConnection) send(mess peerMessage) {
 	content, err := mess.ToNetwork()
 	if err != nil {
-		p.cancel()
+		p.cancel(Peer_malformed_mess_sent)
 	}
 	err = utils.WriteFull(p.conn, content)
 	if err != nil {
-		p.cancel()
+		p.cancel(errors.Join(Peer_write_err, err))
 	}
 }
 
@@ -278,13 +313,14 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 	switch mess.Kind {
 	case KeepAlive:
 		{
-			p.keepAlivePeer.Reset(time.Minute * 2)
+			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", mess.Peer.Info.Pid.String())
+			p.keepAlivePeer.Reset(p.peerTimeout)
 		}
 	case Choke:
 		{
 			if mess.Payload != nil {
 				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
-				p.cancel()
+				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
 			p.AmChoked = true
@@ -293,7 +329,7 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 		{
 			if mess.Payload != nil {
 				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
-				p.cancel()
+				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
 			p.AmChoked = false
@@ -302,7 +338,7 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 		{
 			if mess.Payload != nil {
 				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
-				p.cancel()
+				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
 			p.AmInteresting = true
@@ -311,7 +347,7 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 		{
 			if mess.Payload != nil {
 				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
-				p.cancel()
+				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
 			p.AmInteresting = false
@@ -319,30 +355,31 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 	case Have:
 		{
 			idx := binary.LittleEndian.Uint32(mess.Payload)
-			byteIdx := idx / 8
-			if byteIdx >= uint32(len(p.pieces)) {
-				fmt.Printf("PEER %v ERR -> %v %v:%v\n", string(p.Info.Pid.String()), "out of bounds index", byteIdx, uint32(len(p.pieces)))
-				p.cancel()
+			ok := p.pieces.Set(idx, true)
+			if !ok {
+				fmt.Printf("PEER %v ERR -> %v %v:%v\n", string(p.Info.Pid.String()), "out of bounds index", idx/8, p.pieces.Length())
+				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
-			bitIdx := 7 - (idx % 8)
-			p.pieces[byteIdx] |= 1 << bitIdx
-			p.torr.PeerInbox <- mess
+			p.torr.ReceiveMessage(mess)
 		}
 	case Bitfield:
 		{
 			if p.bitfieldSent {
 				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "double bitfield sent")
-				p.cancel()
+				p.cancel(Peer_double_bitfield)
 				return
 			}
 			p.bitfieldSent = true
-			p.pieces = []byte{}
-			p.pieces = append(p.pieces, mess.Payload...)
+			ok := p.pieces.SetBitfield(mess.Payload)
+			if !ok {
+				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "bitfield length mismatch")
+			}
+			p.torr.ReceiveMessage(mess)
 		}
 	default:
 		{
-			p.torr.PeerInbox <- mess
+			p.torr.ReceiveMessage(mess)
 		}
 	}
 }
