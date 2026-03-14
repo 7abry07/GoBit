@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -101,10 +102,20 @@ func (s *Session) StopTorrent(t *Torrent) {
 }
 
 func (s *Session) handshakePeer(conn net.Conn) {
-	peerConn, err := newIncomingPeerConnection(s, conn, 5)
+	c := newPeerConnection(conn)
+	pid, t, err := c.handshakeIncomingPeer(s.Torrents, s.PeerID)
 	if err != nil {
-		fmt.Printf("CONNECTION FAILED -> %v\n", err.Error())
+		conn.Close()
+		return
 	}
-	fmt.Printf("CONNECTION SUCCESS -> %v\n", peerConn.Info.Pid.String())
-	peerConn.torr.AddPeer(peerConn)
+	ipport, _ := netip.ParseAddrPort(conn.LocalAddr().String())
+	e := PeerEndpoint{Pid: &pid, IpPort: ipport}
+	peer := NewPeer(t, e, s.PeerID)
+
+	peer.Pid = &pid
+	peer.Conn = c
+	peer.State = CONNECTED
+	c.attachPeer(peer)
+
+	c.start()
 }

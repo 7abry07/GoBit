@@ -17,21 +17,19 @@ type TrackerResult struct {
 
 type Tracker struct {
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	TrackerID string
 	Announce  url.URL
 	Scrape    url.URL
-	Tier      uint8
 
-	Out chan TrackerRequest
+	torr *Torrent
 
-	intervalTimer    *time.Timer
-	previousInterval int
-	torr             *Torrent
+	clientPid PeerID
+	port      uint16
 }
 
-func NewTracker(announce url.URL, tier uint8, torrent *Torrent) (*Tracker, error) {
+func NewTracker(announce url.URL, torrent *Torrent, session *Session) (*Tracker, error) {
 	t := Tracker{}
 
 	if announce.Scheme != "http" {
@@ -48,44 +46,51 @@ func NewTracker(announce url.URL, tier uint8, torrent *Torrent) (*Tracker, error
 		t.Scrape = announce
 	}
 	t.TrackerID = ""
-	t.Out = make(chan TrackerRequest)
 	t.torr = torrent
-	t.Tier = tier
-	t.previousInterval = 1800
-	t.ctx, t.cancel = context.WithCancel(torrent.ctx)
-
-	t.intervalTimer = time.NewTimer(time.Hour)
-	if !t.intervalTimer.Stop() {
-		<-t.intervalTimer.C
-	}
-
-	go t.loop()
+	t.ctx, t.cancel = context.WithCancelCause(torrent.ctx)
+	t.clientPid = session.PeerID
+	t.port = session.Port
 
 	return &t, nil
 }
 
-func (t *Tracker) loop() {
-	for {
-		select {
-		case <-t.ctx.Done():
-			{
-				fmt.Printf("TRACKER REMOVED -> %v\n", t.Announce.String())
-				t.intervalTimer.Stop()
-				return
-			}
-		case req := <-t.Out:
-			{
-				go t.send(req)
-			}
-		case _ = <-t.intervalTimer.C:
-			{
-				t.torr.SignalTrackerReady(t)
-			}
-		}
+func (t *Tracker) SendAnnounce(event TrackerEventType) (time.Time, bool) {
+	req := TrackerRequest{}
+	req.Compact = 1
+	req.Downloaded = t.torr.Download
+	req.Uploaded = t.torr.Upload
+	req.Event = event
+	req.Infohash = t.torr.Info.InfoHash
+	req.Kind = TrackerAnnounce
+	req.Left = t.torr.Left
+	req.NoPID = 1
+	req.Numwant = 200
+	req.PeerID = t.clientPid
+	req.Port = t.port
+
+	res := t.send(req)
+	if res.Err != nil {
+		t.cancel(res.Err)
+		return time.Now(), false
 	}
+	if res.Val.Failure != nil {
+		err := fmt.Errorf("announce failed (%v)", *res.Val.Failure)
+		t.cancel(err)
+		return time.Now(), false
+	}
+
+	//
+	fmt.Printf("[%v] SENDING PEERS (reannounce in %v)\n", t.Announce.String(), (time.Second * time.Duration(res.Val.Interval)))
+	//
+
+	for _, e := range res.Val.PeerList {
+		go t.torr.AddPeer(e)
+	}
+
+	return time.Now().Add(time.Second * time.Duration(res.Val.Interval)), true
 }
 
-func (t *Tracker) send(req TrackerRequest) {
+func (t *Tracker) send(req TrackerRequest) TrackerResult {
 	defaultResp := TrackerResponse{}
 	defaultResp.Tracker_ = t
 	switch t.Announce.Scheme {
@@ -94,37 +99,25 @@ func (t *Tracker) send(req TrackerRequest) {
 			fullUrl := req.SerializeHttp(*t)
 			httpResp, err := http.Get(fullUrl.String())
 			if err != nil {
-				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
-				go t.schedule(t.previousInterval)
-				return
+				return TrackerResult{err, defaultResp}
 			}
 			content, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
-				go t.schedule(t.previousInterval)
-				return
+				return TrackerResult{err, defaultResp}
 			}
 			resp, err := DeserializeTrackerResponseHttp(content, req)
 			if err != nil {
-				t.torr.ReceiveTracker(TrackerResult{err, defaultResp})
-				go t.schedule(t.previousInterval)
-				return
+				return TrackerResult{err, defaultResp}
 			}
 			if resp.trackerID != nil {
 				t.TrackerID = *resp.trackerID
 			}
 
-			t.torr.ReceiveTracker(TrackerResult{nil, resp})
-			go t.schedule(int(resp.Interval))
-			t.previousInterval = int(resp.Interval)
+			return TrackerResult{nil, resp}
 		}
 	case "udp":
-		t.torr.ReceiveTracker(TrackerResult{Tracker_invalid_scheme_err, TrackerResponse{}})
+		return TrackerResult{Tracker_invalid_scheme_err, defaultResp}
 	default:
 		panic(Tracker_invalid_scheme_err)
 	}
-}
-
-func (t *Tracker) schedule(seconds int) {
-	t.intervalTimer.Reset(time.Second * time.Duration(seconds))
 }

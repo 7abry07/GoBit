@@ -2,7 +2,6 @@ package utils
 
 import (
 	"bytes"
-	// "fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -21,7 +20,7 @@ func WriteFull(conn net.Conn, content []byte) error {
 	return nil
 }
 
-func SendHandshake(conn net.Conn, ih, pid [20]byte) ([]byte, error) {
+func SendHandshake(conn net.Conn, ih, pid [20]byte) error {
 	handshake := []byte{
 		0x13,
 		'B', 'i', 't',
@@ -35,39 +34,44 @@ func SendHandshake(conn net.Conn, ih, pid [20]byte) ([]byte, error) {
 
 	err := WriteFull(conn, handshake)
 	if err != nil {
-		return []byte{}, err
+		return err
 	}
 
-	return handshake, nil
+	return nil
 }
 
-func ReceiveHandshake(conn net.Conn, req []byte) ([20]byte, bool) {
+func ReceiveHandshake(conn net.Conn) ([20]byte, [20]byte, bool) {
+	handshake := []byte{
+		0x13,
+		'B', 'i', 't',
+		'T', 'o', 'r', 'r', 'e', 'n', 't',
+		' ',
+		'p', 'r', 'o', 't', 'o', 'c', 'o', 'l',
+	}
+
 	buf := make([]byte, 68)
 
-	conn.SetDeadline(time.Now().Add(time.Second * 5))
+	conn.SetDeadline(time.Now().Add(time.Second * 10))
 	r, err := io.ReadFull(conn, buf)
 	conn.SetDeadline(time.Time{})
 	pid := [20]byte{}
+	ih := [20]byte{}
 
 	if err != nil {
-		return ([20]byte)(pid), false
+		return pid, ih, false
 	}
 
 	if r < 68 {
-		return ([20]byte)(pid), false
+		return pid, ih, false
 	}
 
-	if !bytes.Equal(buf[:20], req[:20]) {
-		return ([20]byte)(pid), false
-	}
-
-	if !bytes.Equal(buf[28:48], req[28:48]) {
-		return ([20]byte)(pid), false
+	if !bytes.Equal(buf[:20], handshake[:20]) {
+		return pid, ih, false
 	}
 
 	pid = ([20]byte)(buf[48:])
-	// fmt.Printf("PEER ID -> %v\n", string(pid[:]))
-	return pid, true
+	ih = ([20]byte)(buf[28:48])
+	return pid, ih, true
 }
 
 func GenerateRandomPeerId() [20]byte {

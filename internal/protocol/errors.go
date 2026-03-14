@@ -25,4 +25,5 @@ var (
 
 	Peer_bad_handshake_err error = errors.New("the handshake request or response of the peer is invalid")
 	Peer_bad_message_err   error = errors.New("the message sent to the peer is invalid")
+	Peer_id_mismatch_err   error = errors.New("the message sent to the peer is invalid")
 )

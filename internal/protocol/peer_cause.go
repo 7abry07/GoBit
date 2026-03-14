@@ -11,4 +11,5 @@ var (
 	Peer_malformed_mess_recv = errors.New("malformed message received")
 	Peer_double_bitfield     = errors.New("double bitfield received")
 	Peer_invalid_bitfield    = errors.New("invalid bitfield received")
+	Peer_too_many_attempts   = errors.New("too many connection attempts")
 )

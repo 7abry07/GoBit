@@ -20,7 +20,7 @@ const (
 )
 
 type peerMessage struct {
-	Peer    *peerConnection
+	Peer    *PeerConnection
 	Kind    peerMessageType
 	Payload []byte
 }

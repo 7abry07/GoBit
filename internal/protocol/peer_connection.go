@@ -4,7 +4,6 @@ import (
 	"GoBit/internal/utils"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,195 +11,136 @@ import (
 	"time"
 )
 
-type peerConnection struct {
-	ctx           context.Context
-	cancel        context.CancelCauseFunc
-	keepAliveSelf *time.Ticker
+type PeerEndpoint struct {
+	Pid    *PeerID
+	IpPort netip.AddrPort
+}
+
+type PeerConnection struct {
+	ctx    context.Context
+	cancel context.CancelCauseFunc
+
+	// keepAliveSelf *time.Ticker
 	keepAlivePeer *time.Timer
 	keepAliveFreq time.Duration
 	peerTimeout   time.Duration
 
-	conn net.Conn
-	torr *Torrent
+	conn  net.Conn
+	owner *Peer
 
-	in  chan peerMessage
-	out chan peerMessage
+	in    chan peerMessage
+	out   chan peerMessage
+	queue chan PeerRequest
 
-	requestQueue chan PeerRequest
+	Pieces *utils.Bitfield
 
-	pieces *utils.Bitfield
-
-	Info          Peer
 	IsChoked      bool
 	IsInteresting bool
 	AmChoked      bool
 	AmInteresting bool
-	bitfieldSent  bool
+
+	bitfieldSent bool
 }
 
-func newPeerConnection(t *Torrent, p Peer, pid PeerID, queueSize int) (*peerConnection, error) {
-	peerConn := peerConnection{}
-	peerConn.ctx, peerConn.cancel = context.WithCancelCause(t.ctx)
-	peerConn.Info = p
-	peerConn.AmChoked = true
-	peerConn.IsChoked = true
-	peerConn.AmInteresting = false
-	peerConn.IsInteresting = false
-	peerConn.bitfieldSent = false
-	peerConn.out = make(chan peerMessage)
-	peerConn.in = make(chan peerMessage)
-	peerConn.requestQueue = make(chan PeerRequest, queueSize)
-	peerConn.pieces = utils.NewBitfield(uint32(len(t.Info.Pieces) / 20))
-	peerConn.keepAliveFreq = time.Minute
-	peerConn.peerTimeout = time.Minute * 3
-	peerConn.keepAliveSelf = time.NewTicker(peerConn.keepAliveFreq)
-	peerConn.keepAlivePeer = time.NewTimer(peerConn.peerTimeout)
-	peerConn.torr = t
+func newPeerConnection(conn net.Conn) *PeerConnection {
+	c := PeerConnection{}
+	c.AmChoked = true
+	c.IsChoked = true
+	c.AmInteresting = false
+	c.IsInteresting = false
+	c.bitfieldSent = false
+	c.owner = nil
+	c.keepAliveFreq = time.Minute
+	c.peerTimeout = time.Minute * 3
+	c.out = make(chan peerMessage)
+	c.in = make(chan peerMessage)
+	c.queue = make(chan PeerRequest)
 
-	conn, err := net.DialTimeout("tcp", p.IpPort.String(), time.Second*3)
+	c.conn = conn
+
+	return &c
+}
+
+func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) (PeerID, error) {
+	err := utils.SendHandshake(c.conn, infohash, clientPid)
 	if err != nil {
-		return nil, err
+		return [20]byte{}, err
 	}
 
-	handshakeReq, err := utils.SendHandshake(conn, t.Info.InfoHash, pid)
-	if err != nil {
-		conn.Close()
-		return nil, err
+	pid, ih, ok := utils.ReceiveHandshake(c.conn)
+	if !ok || ih != infohash {
+		return [20]byte{}, Peer_bad_handshake_err
 	}
 
-	pid, ok := utils.ReceiveHandshake(conn, handshakeReq)
+	return pid, nil
+}
+
+func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (PeerID, *Torrent, error) {
+	pid, ih, ok := utils.ReceiveHandshake(c.conn)
 	if !ok {
-		conn.Close()
-		return nil, Peer_bad_handshake_err
+		return [20]byte{}, nil, Peer_bad_handshake_err
 	}
 
-	peerConn.Info.Pid = pid
-	peerConn.conn = conn
+	torrent, ok := torrents[ih]
+	if !ok {
+		return [20]byte{}, nil, Peer_bad_handshake_err
+	}
 
-	return &peerConn, nil
+	err := utils.SendHandshake(c.conn, ih, clientPid)
+
+	if err != nil {
+		return [20]byte{}, nil, err
+	}
+
+	return pid, torrent, nil
 }
 
-func newIncomingPeerConnection(s *Session, conn net.Conn, queueSize int) (*peerConnection, error) {
-	buf := make([]byte, 68)
-	bytesRead, err := io.ReadFull(conn, buf)
-	if err != nil || bytesRead != 68 {
-		conn.Close()
-		return nil, err
-	}
-	if string(buf[0:20]) != "\x13BitTorrent protocol" {
-		conn.Close()
-		return nil, err
-	}
-
-	infohash := [20]byte(buf[29:49])
-	pid := [20]byte(buf[49:])
-
-	torrent, found := s.Torrents[infohash]
-	if !found {
-		conn.Close()
-		return nil, err
-	}
-
-	_, err = utils.SendHandshake(conn, infohash, s.PeerID)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	endpoint, err := netip.ParseAddrPort(conn.LocalAddr().String())
-	if err != nil {
-		panic(err)
-	}
-	peerInfo := Peer{Pid: pid, IpPort: endpoint}
-
-	peerConn := peerConnection{}
-	peerConn.ctx, peerConn.cancel = context.WithCancelCause(torrent.ctx)
-	peerConn.Info = peerInfo
-	peerConn.conn = conn
-	peerConn.bitfieldSent = false
-	peerConn.pieces = utils.NewBitfield(uint32(len(torrent.Info.Pieces) / 20))
-	peerConn.AmChoked = true
-	peerConn.IsChoked = true
-	peerConn.AmInteresting = false
-	peerConn.IsInteresting = false
-	peerConn.requestQueue = make(chan PeerRequest, queueSize)
-	peerConn.out = make(chan peerMessage)
-	peerConn.in = make(chan peerMessage)
-	peerConn.keepAliveSelf = time.NewTicker(time.Minute)
-	peerConn.keepAlivePeer = time.NewTimer(time.Minute * 3)
-	peerConn.torr = torrent
-
-	return &peerConn, nil
+func (c *PeerConnection) attachPeer(p *Peer) {
+	c.ctx, c.cancel = context.WithCancelCause(p.ctx)
+	c.owner = p
 }
 
-func (p *peerConnection) start() {
+func (p *PeerConnection) start() {
+	if p.owner == nil {
+		panic("peer connection started without logical peer attached")
+	}
+	// p.keepAliveSelf = time.NewTicker(p.keepAliveFreq)
+	p.keepAlivePeer = time.NewTimer(p.peerTimeout)
 	go p.loop()
 }
 
-func (p *peerConnection) readLoop() {
+func (p *PeerConnection) loop() {
 	go p.receiveLoop()
 
 	for {
 		select {
 		case <-p.ctx.Done():
-			return
-		case mess := <-p.in:
-			go p.handleMessage(mess)
-		}
-	}
-}
-func (p *peerConnection) writeLoop() {
-	for {
-		select {
-		case <-p.ctx.Done():
-			return
-		case mess := <-p.out:
-			go p.send(mess)
-		}
-	}
-}
-
-func (p *peerConnection) loop() {
-	go p.readLoop()
-	go p.writeLoop()
-
-	for {
-		select {
-		case <-p.ctx.Done():
 			{
-				fmt.Printf("PEER REMOVED -> %v REASON -> %v\n", string(p.Info.Pid.String()), context.Cause(p.ctx))
-				p.torr.RemovePeer(p)
+				if p.owner.Pid == nil {
+					fmt.Printf(
+						"ANONYMOUS PEER DISCONNECTED BECAUSE: %v\n",
+						context.Cause(p.ctx).Error())
+				} else {
+					fmt.Printf(
+						"%v DISCONNECTED BECAUSE: %v\n",
+						p.owner.Pid.String(), context.Cause(p.ctx).Error())
+				}
+				p.owner.CloseConnection()
 				p.conn.Close()
 				return
 			}
-		case req := <-p.requestQueue:
-			{
-				mess := peerMessage{}
-				mess.Kind = Request
-				binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
-				binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
-				binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
-				p.out <- mess
-			}
-		case <-p.keepAliveSelf.C:
-			{
-				mess := peerMessage{}
-				mess.Kind = KeepAlive
-				mess.Payload = nil
-				p.out <- mess
-				p.keepAliveSelf.Reset(p.keepAliveFreq)
-				fmt.Printf("KEEP ALIVE SENT -> %v\n", p.Info.Pid.String())
-			}
+		case mess := <-p.in:
+			p.keepAlivePeer.Reset(p.peerTimeout)
+			go p.handleMessage(mess)
+		case mess := <-p.out:
+			go p.send(mess)
 		case <-p.keepAlivePeer.C:
-			{
-				fmt.Printf("PEER ERROR TIMEOUT -> %v\n", p.Info.Pid.String())
-				p.cancel(Peer_timeout)
-			}
+			p.cancel(Peer_timeout)
 		}
 	}
 }
 
-func (p *peerConnection) receiveLoop() {
+func (p *PeerConnection) receiveLoop() {
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -210,7 +150,7 @@ func (p *peerConnection) receiveLoop() {
 
 			_, err := io.ReadFull(p.conn, lenBuf)
 			if err != nil {
-				p.cancel(errors.Join(Peer_read_err, err))
+				p.cancel(fmt.Errorf("%w (%w)", Peer_read_err, err))
 				return
 			}
 
@@ -220,7 +160,7 @@ func (p *peerConnection) receiveLoop() {
 			_, err = io.ReadFull(p.conn, messBuf)
 
 			if err != nil {
-				p.cancel(errors.Join(Peer_read_err, err))
+				p.cancel(fmt.Errorf("%w (%w)", Peer_read_err, err))
 				return
 			}
 
@@ -236,90 +176,43 @@ func (p *peerConnection) receiveLoop() {
 	}
 }
 
-func (p *peerConnection) HasPiece(idx uint32) bool {
-	return p.pieces.IsSet(idx)
-}
-
-func (p *peerConnection) SendBlock(res PeerBlockResponse) {
-	mess := peerMessage{}
-	mess.Kind = Piece
-	binary.LittleEndian.AppendUint32(mess.Payload, res.Idx)
-	binary.LittleEndian.AppendUint32(mess.Payload, res.Begin)
-	mess.Payload = append(mess.Payload, res.Block...)
-	p.out <- mess
-}
-
-func (p *peerConnection) SendHave(idx uint32) {
-	mess := peerMessage{}
-	mess.Kind = Have
-	binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	p.out <- mess
-}
-
-func (p *peerConnection) SendBitfield(bitfield *utils.Bitfield) {
-	mess := peerMessage{}
-	mess.Kind = Bitfield
-	mess.Payload = bitfield.Data()
-	p.out <- mess
-}
-
-func (p *peerConnection) SetInterested(v bool) {
-	mess := peerMessage{}
-	if v {
-		mess.Kind = Interested
-	} else {
-		mess.Kind = Interested
+func (p *PeerConnection) keepAlive() (time.Time, bool) {
+	ka := peerMessage{
+		Peer:    p,
+		Kind:    KeepAlive,
+		Payload: nil,
 	}
-	mess.Payload = nil
-	p.out <- mess
-}
 
-func (p *peerConnection) SetChoked(v bool) {
-	mess := peerMessage{}
-	if v {
-		mess.Kind = Choke
-	} else {
-		mess.Kind = Unchoke
+	if p == nil || p.ctx.Err() != nil {
+		return time.Now(), false
 	}
-	mess.Payload = nil
-	p.out <- mess
+
+	go p.send(ka)
+
+	return time.Now().Add(time.Minute), true
 }
 
-func (p *peerConnection) CancelRequest(req PeerRequest) {
-	mess := peerMessage{}
-	mess.Kind = Cancel
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
-	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
-	p.out <- mess
-}
-
-func (p *peerConnection) QueueRequest(req PeerRequest) {
-	p.requestQueue <- req
-}
-
-func (p *peerConnection) send(mess peerMessage) {
+func (p *PeerConnection) send(mess peerMessage) {
 	content, err := mess.ToNetwork()
 	if err != nil {
 		p.cancel(Peer_malformed_mess_sent)
 	}
 	err = utils.WriteFull(p.conn, content)
 	if err != nil {
-		p.cancel(errors.Join(Peer_write_err, err))
+		p.cancel(fmt.Errorf("%w (%w)", Peer_write_err, err))
 	}
 }
 
-func (p *peerConnection) handleMessage(mess peerMessage) {
+func (p *PeerConnection) handleMessage(mess peerMessage) {
 	switch mess.Kind {
 	case KeepAlive:
 		{
-			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", mess.Peer.Info.Pid.String())
+			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", p.owner.Pid.String())
 			p.keepAlivePeer.Reset(p.peerTimeout)
 		}
 	case Choke:
 		{
 			if mess.Payload != nil {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
 				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
@@ -328,7 +221,6 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 	case Unchoke:
 		{
 			if mess.Payload != nil {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
 				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
@@ -337,7 +229,6 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 	case Interested:
 		{
 			if mess.Payload != nil {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
 				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
@@ -346,7 +237,6 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 	case Uninterested:
 		{
 			if mess.Payload != nil {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "non nil payload")
 				p.cancel(Peer_malformed_mess_recv)
 				return
 			}
@@ -354,32 +244,20 @@ func (p *peerConnection) handleMessage(mess peerMessage) {
 		}
 	case Have:
 		{
-			idx := binary.LittleEndian.Uint32(mess.Payload)
-			ok := p.pieces.Set(idx, true)
-			if !ok {
-				fmt.Printf("PEER %v ERR -> %v %v:%v\n", string(p.Info.Pid.String()), "out of bounds index", idx/8, p.pieces.Length())
-				p.cancel(Peer_malformed_mess_recv)
-				return
-			}
-			p.torr.ReceiveMessage(mess)
+			p.owner.in <- mess
 		}
 	case Bitfield:
 		{
 			if p.bitfieldSent {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "double bitfield sent")
 				p.cancel(Peer_double_bitfield)
 				return
 			}
 			p.bitfieldSent = true
-			ok := p.pieces.SetBitfield(mess.Payload)
-			if !ok {
-				fmt.Printf("PEER %v ERR -> %v\n", string(p.Info.Pid.String()), "bitfield length mismatch")
-			}
-			p.torr.ReceiveMessage(mess)
+			p.owner.in <- mess
 		}
 	default:
 		{
-			p.torr.ReceiveMessage(mess)
+			p.owner.in <- mess
 		}
 	}
 }

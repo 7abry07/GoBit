@@ -16,7 +16,7 @@ type TrackerResponse struct {
 	Complete    int64
 	Incomplete  int64
 	Downloaded  int64
-	PeerList    []Peer
+	PeerList    []PeerEndpoint
 }
 
 func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
@@ -100,7 +100,7 @@ func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (Tracke
 				return TrackerResponse{}, Tracker_invalid_resp_err
 			}
 
-			peerVal := Peer{}
+			peerVal := PeerEndpoint{}
 			peerVal.Pid, err = NewPeerID(([]byte)(pid))
 			if err != nil {
 				panic(err)
@@ -135,8 +135,8 @@ func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (Tracke
 	return resp, nil
 }
 
-func parseV4CompactPeers(peers []byte) ([]Peer, bool) {
-	peerList := []Peer{}
+func parseV4CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
+	peerList := []PeerEndpoint{}
 
 	for {
 		if len(peers) == 0 {
@@ -148,10 +148,10 @@ func parseV4CompactPeers(peers []byte) ([]Peer, bool) {
 
 		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 		if err != nil {
-			return []Peer{}, false
+			return []PeerEndpoint{}, false
 		}
 
-		peerVal := Peer{}
+		peerVal := PeerEndpoint{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 
@@ -160,8 +160,8 @@ func parseV4CompactPeers(peers []byte) ([]Peer, bool) {
 	return peerList, true
 }
 
-func parseV6CompactPeers(peers []byte) ([]Peer, bool) {
-	peerList := []Peer{}
+func parseV6CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
+	peerList := []PeerEndpoint{}
 
 	for {
 		if len(peers) == 0 {
@@ -182,10 +182,10 @@ func parseV6CompactPeers(peers []byte) ([]Peer, bool) {
 			uint16(ip[15])|uint16(ip[14])<<8))
 
 		if err != nil {
-			return []Peer{}, false
+			return []PeerEndpoint{}, false
 		}
 
-		peerVal := Peer{}
+		peerVal := PeerEndpoint{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 

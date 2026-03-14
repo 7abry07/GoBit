@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/naruto.torrent")
+	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/one_piece.torrent")
 	if err != nil {
 		panic(err)
 	}
@@ -18,7 +18,7 @@ func main() {
 	ses.Start()
 	ses.AddTorrent(torr)
 
-	// time.Sleep(7 * time.Second)
+	// time.Sleep(15 * time.Second)
 	// fmt.Println("EXPIRED")
 	// ses.StopTorrent(torr)
 
