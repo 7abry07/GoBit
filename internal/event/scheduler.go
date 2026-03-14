@@ -1,8 +1,7 @@
-package protocol
+package event
 
 import (
 	"container/heap"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -34,7 +33,6 @@ func (s *Scheduler) Schedule(t Task) {
 	if len(s.tasks) == 0 {
 		heap.Push(&s.tasks, &item)
 		s.taskTimer.Reset(time.Until(t.RunAt))
-		fmt.Printf("SCHEDULER -> NEXT IN %v\n", time.Until(t.RunAt).Truncate(time.Second))
 		return
 	}
 
@@ -43,15 +41,14 @@ func (s *Scheduler) Schedule(t Task) {
 
 	if original != s.tasks[0] {
 		s.taskTimer.Reset(time.Until(item.task.RunAt))
-		fmt.Printf("SCHEDULER -> NEXT IN %v\n", time.Until(s.tasks[0].task.RunAt).Truncate(time.Second))
 	}
 }
 
 func (s *Scheduler) runAndReschedule(task Task) {
-	nextTime, repeat := task.fn()
+	nextTime, repeat := task.Fn()
 	if repeat {
 		newTask := Task{
-			fn:    task.fn,
+			Fn:    task.Fn,
 			RunAt: nextTime,
 		}
 		go s.Schedule(newTask)
@@ -59,20 +56,14 @@ func (s *Scheduler) runAndReschedule(task Task) {
 }
 
 func (s *Scheduler) loop() {
-	for {
-		select {
-		case <-s.taskTimer.C:
-			{
-				task := heap.Pop(&s.tasks).(*Item).task
+	for range s.taskTimer.C {
+		task := heap.Pop(&s.tasks).(*Item).task
 
-				go s.runAndReschedule(task)
+		go s.runAndReschedule(task)
 
-				if len(s.tasks) != 0 {
-					newTask := s.tasks[0].task
-					fmt.Printf("SCHEDULER -> (COMPLETED) NEXT IN %v\n", time.Until(newTask.RunAt).Truncate(time.Second))
-					s.taskTimer.Reset(time.Until(newTask.RunAt))
-				}
-			}
+		if len(s.tasks) != 0 {
+			newTask := s.tasks[0].task
+			s.taskTimer.Reset(time.Until(newTask.RunAt))
 		}
 	}
 }

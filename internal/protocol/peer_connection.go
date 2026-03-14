@@ -104,7 +104,6 @@ func (p *PeerConnection) start() {
 	if p.owner == nil {
 		panic("peer connection started without logical peer attached")
 	}
-	// p.keepAliveSelf = time.NewTicker(p.keepAliveFreq)
 	p.keepAlivePeer = time.NewTimer(p.peerTimeout)
 	go p.loop()
 }

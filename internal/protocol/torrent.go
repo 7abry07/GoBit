@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"GoBit/internal/event"
 	"GoBit/internal/utils"
 	"context"
 	"encoding/binary"
@@ -29,7 +30,7 @@ type Torrent struct {
 	Upload   int64
 	Left     int64
 
-	Sched  *Scheduler
+	Sched  *event.Scheduler
 	Picker *PiecePicker
 }
 
@@ -37,7 +38,7 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent := Torrent{}
 	torrent.ctx, torrent.cancel = context.WithCancel(ses.ctx)
 	torrent.Ses = ses
-	torrent.Sched = NewScheduler()
+	torrent.Sched = event.NewScheduler()
 	torrent.Info = file
 	torrent.PeerList = []*Peer{}
 	torrent.TrackerList = []*Tracker{}
@@ -181,8 +182,8 @@ func (t *Torrent) dialPeer(p *Peer) (time.Time, bool) {
 func (t *Torrent) DialPeerOrRetry(p *Peer) {
 	retryAt, retry := t.dialPeer(p)
 	if retry {
-		retryTask := Task{
-			fn: func() (time.Time, bool) {
+		retryTask := event.Task{
+			Fn: func() (time.Time, bool) {
 				return t.dialPeer(p)
 			},
 			RunAt: retryAt,
@@ -191,8 +192,8 @@ func (t *Torrent) DialPeerOrRetry(p *Peer) {
 		return
 	}
 
-	keepAliveTask := Task{
-		fn: func() (time.Time, bool) {
+	keepAliveTask := event.Task{
+		Fn: func() (time.Time, bool) {
 			defer fmt.Println("KEEP ALIVE SENT")
 			return p.Conn.keepAlive()
 		},
@@ -208,8 +209,8 @@ func (t *Torrent) AnnounceAndSchedule(tracker *Tracker) {
 		return
 	}
 
-	announceTask := Task{
-		fn: func() (time.Time, bool) {
+	announceTask := event.Task{
+		Fn: func() (time.Time, bool) {
 			return tracker.SendAnnounce(TrackerNone)
 		},
 		RunAt: interval,

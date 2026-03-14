@@ -1,4 +1,4 @@
-package protocol
+package event
 
 import (
 	"container/heap"
@@ -7,7 +7,7 @@ import (
 
 type Task struct {
 	RunAt time.Time
-	fn    func() (time.Time, bool)
+	Fn    func() (time.Time, bool)
 }
 
 type Item struct {
