@@ -75,7 +75,11 @@ func (t *Tracker) SendAnnounce(event TrackerEventType) (time.Time, bool) {
 	}
 
 	fmt.Printf("[%v] -> SENDING PEERS (reannounce in %v)\n", t.Announce.String(), (time.Second * time.Duration(res.Interval)))
-	t.torr.OnAnnounceResponse(res.PeerList)
+
+	for _, entry := range res.PeerList {
+		peer := NewPeer(entry.IpPort)
+		go t.torr.AddPeer(peer)
+	}
 
 	return time.Now().Add(time.Second * time.Duration(res.Interval)), true
 }

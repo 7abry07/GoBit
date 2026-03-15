@@ -163,12 +163,6 @@ func (t *Torrent) DialPeer(p *Peer) (time.Duration, error) {
 	p.FailureCnt = 0
 	return 0, nil
 }
-func (t *Torrent) OnAnnounceResponse(entries []PeerEntry) {
-	for _, entry := range entries {
-		peer := NewPeer(entry.IpPort)
-		t.AddPeer(peer)
-	}
-}
 
 func (t *Torrent) handleIncomingMessage(mess peerMessage) {
 	switch mess.Kind {
@@ -183,8 +177,7 @@ func (t *Torrent) handleIncomingMessage(mess peerMessage) {
 			bf.SetBitfield(mess.Payload)
 			ok := t.Picker.IncRefBitfield(bf)
 			if !ok {
-				mess.Peer.cancel(Peer_invalid_bitfield)
-				return
+				panic("unexpected error, bitfield size doesnt match")
 			}
 		}
 	}

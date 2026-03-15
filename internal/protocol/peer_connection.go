@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"GoBit/internal/utils"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -60,14 +61,18 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 }
 
 func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) error {
-	err := utils.SendHandshake(c.conn, infohash, clientPid)
+	err := sendHandshake(c.conn, infohash, clientPid)
 	if err != nil {
 		return err
 	}
 
-	pid, ih, ok := utils.ReceiveHandshake(c.conn)
-	if !ok || ih != infohash {
-		return Peer_bad_handshake_err
+	pid, ih, err := receiveHandshake(c.conn)
+	if err != nil {
+		return err
+	}
+
+	if ih != infohash {
+		return Peer_handshake_infohash_err
 	}
 
 	c.Pid = pid
@@ -75,8 +80,8 @@ func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) erro
 }
 
 func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (*Torrent, error) {
-	pid, ih, ok := utils.ReceiveHandshake(c.conn)
-	if !ok {
+	pid, ih, err := receiveHandshake(c.conn)
+	if err != nil {
 		return nil, Peer_bad_handshake_err
 	}
 
@@ -85,7 +90,7 @@ func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, c
 		return nil, Peer_bad_handshake_err
 	}
 
-	err := utils.SendHandshake(c.conn, ih, clientPid)
+	err = sendHandshake(c.conn, ih, clientPid)
 
 	if err != nil {
 		return nil, err
@@ -233,7 +238,7 @@ func (p *PeerConnection) CancelRequest(req PeerRequest) {
 func (p *PeerConnection) send(mess peerMessage) {
 	content, err := mess.ToNetwork()
 	if err != nil {
-		p.cancel(Peer_malformed_mess_sent)
+		panic("bad message sent")
 	}
 	err = utils.WriteFull(p.conn, content)
 	if err != nil {
@@ -241,17 +246,68 @@ func (p *PeerConnection) send(mess peerMessage) {
 	}
 }
 
+func sendHandshake(conn net.Conn, ih, pid [20]byte) error {
+	handshake := []byte{
+		0x13,
+		'B', 'i', 't',
+		'T', 'o', 'r', 'r', 'e', 'n', 't',
+		' ',
+		'p', 'r', 'o', 't', 'o', 'c', 'o', 'l',
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	}
+	handshake = append(handshake, ih[:]...)
+	handshake = append(handshake, pid[:]...)
+
+	err := utils.WriteFull(conn, handshake)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func receiveHandshake(conn net.Conn) ([20]byte, [20]byte, error) {
+	handshake := []byte{
+		0x13,
+		'B', 'i', 't',
+		'T', 'o', 'r', 'r', 'e', 'n', 't',
+		' ',
+		'p', 'r', 'o', 't', 'o', 'c', 'o', 'l',
+	}
+
+	buf := make([]byte, 68)
+
+	conn.SetDeadline(time.Now().Add(time.Second * 10))
+	_, err := io.ReadFull(conn, buf)
+	conn.SetDeadline(time.Time{})
+
+	pid := [20]byte{}
+	ih := [20]byte{}
+
+	if err != nil {
+		return pid, ih, fmt.Errorf("%v (%v)", Peer_handshake_err, err)
+	}
+
+	if !bytes.Equal(buf[:20], handshake[:20]) {
+		return pid, ih, Peer_bad_handshake_err
+	}
+
+	pid = ([20]byte)(buf[48:])
+	ih = ([20]byte)(buf[28:48])
+
+	return pid, ih, nil
+}
+
 func (p *PeerConnection) handleMessage(mess peerMessage) {
 	switch mess.Kind {
 	case KeepAlive:
 		{
-			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", p.Pid.String())
 			p.keepAlivePeer.Reset(p.peerTimeout)
 		}
 	case Choke:
 		{
 			if mess.Payload != nil {
-				p.cancel(Peer_malformed_mess_recv)
+				p.cancel(Peer_bad_message_err)
 				return
 			}
 			p.AmChoked = true
@@ -259,7 +315,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 	case Unchoke:
 		{
 			if mess.Payload != nil {
-				p.cancel(Peer_malformed_mess_recv)
+				p.cancel(Peer_bad_message_err)
 				return
 			}
 			p.AmChoked = false
@@ -267,7 +323,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 	case Interested:
 		{
 			if mess.Payload != nil {
-				p.cancel(Peer_malformed_mess_recv)
+				p.cancel(Peer_bad_message_err)
 				return
 			}
 			p.AmInteresting = true
@@ -275,13 +331,19 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 	case Uninterested:
 		{
 			if mess.Payload != nil {
-				p.cancel(Peer_malformed_mess_recv)
+				p.cancel(Peer_bad_message_err)
 				return
 			}
 			p.AmInteresting = false
 		}
 	case Have:
 		{
+			if len(mess.Payload) != 4 {
+				p.cancel(Peer_bad_message_err)
+				return
+			}
+			idx := binary.LittleEndian.Uint32(mess.Payload)
+			p.Pieces.Set(idx, true)
 			p.torrent.ReceiveMessage(mess)
 		}
 	case Bitfield:
@@ -290,12 +352,40 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 				p.cancel(Peer_double_bitfield)
 				return
 			}
+
+			ok := p.Pieces.SetBitfield(mess.Payload)
+			if !ok {
+				p.cancel(Peer_bad_message_err)
+				return
+			}
+
 			p.bitfieldSent = true
+			p.torrent.ReceiveMessage(mess)
+		}
+	case Request:
+		{
+			if len(mess.Payload) != 13 {
+				p.cancel(Peer_bad_message_err)
+			}
+			p.torrent.ReceiveMessage(mess)
+		}
+	case Piece:
+		{
+			if uint32(len(mess.Payload)) != 9+p.torrent.Picker.blockLength {
+				p.cancel(Peer_bad_message_err)
+			}
+			p.torrent.ReceiveMessage(mess)
+		}
+	case Cancel:
+		{
+			if len(mess.Payload) != 13 {
+				p.cancel(Peer_bad_message_err)
+			}
 			p.torrent.ReceiveMessage(mess)
 		}
 	default:
 		{
-			p.torrent.ReceiveMessage(mess)
+			p.cancel(Peer_unrecognized_mess_err)
 		}
 	}
 }
