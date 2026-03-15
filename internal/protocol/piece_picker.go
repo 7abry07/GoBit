@@ -62,12 +62,8 @@ func NewPiecePicker(t *Torrent, blockLength uint32) *PiecePicker {
 	return &p
 }
 
-func (p *PiecePicker) PickPiece(peer *Peer) (pieceInfo, bool) {
-	if peer.State != CONNECTED {
-		return pieceInfo{}, false
-	}
-
-	if peer.Conn.IsChoked {
+func (p *PiecePicker) PickPiece(peer *PeerConnection) (pieceInfo, bool) {
+	if peer.IsChoked {
 		return pieceInfo{}, false
 	}
 	interestingPiece := pieceInfo{}
@@ -142,7 +138,7 @@ func (p *PiecePicker) DecRefBitfield(bf *utils.Bitfield) bool {
 	return true
 }
 
-func (p *PiecePicker) calculateInterested(peer *Peer) bool {
+func (p *PiecePicker) calculateInterested(peer *PeerConnection) bool {
 	for i, piece := range p.pieces {
 		if piece.state == DONT_HAVE && peer.Pieces.IsSet(uint32(i)) {
 			return true

@@ -10,11 +10,6 @@ import (
 	"time"
 )
 
-type TrackerResult struct {
-	Err error
-	Val TrackerResponse
-}
-
 type Tracker struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -68,55 +63,48 @@ func (t *Tracker) SendAnnounce(event TrackerEventType) (time.Time, bool) {
 	req.PeerID = t.clientPid
 	req.Port = t.port
 
-	res := t.send(req)
-	if res.Err != nil {
-		t.cancel(res.Err)
+	res, err := t.send(req)
+	if err != nil {
+		t.cancel(err)
 		return time.Now(), false
 	}
-	if res.Val.Failure != nil {
-		err := fmt.Errorf("announce failed (%v)", *res.Val.Failure)
+	if res.Failure != nil {
+		err := fmt.Errorf("announce failed (%v)", res.Failure)
 		t.cancel(err)
 		return time.Now(), false
 	}
 
-	//
-	fmt.Printf("[%v] SENDING PEERS (reannounce in %v)\n", t.Announce.String(), (time.Second * time.Duration(res.Val.Interval)))
-	//
+	fmt.Printf("[%v] -> SENDING PEERS (reannounce in %v)\n", t.Announce.String(), (time.Second * time.Duration(res.Interval)))
+	t.torr.OnAnnounceResponse(res.PeerList)
 
-	for _, e := range res.Val.PeerList {
-		go t.torr.AddPeer(e)
-	}
-
-	return time.Now().Add(time.Second * time.Duration(res.Val.Interval)), true
+	return time.Now().Add(time.Second * time.Duration(res.Interval)), true
 }
 
-func (t *Tracker) send(req TrackerRequest) TrackerResult {
-	defaultResp := TrackerResponse{}
-	defaultResp.Tracker_ = t
+func (t *Tracker) send(req TrackerRequest) (TrackerResponse, error) {
 	switch t.Announce.Scheme {
 	case "http":
 		{
 			fullUrl := req.SerializeHttp(*t)
 			httpResp, err := http.Get(fullUrl.String())
 			if err != nil {
-				return TrackerResult{err, defaultResp}
+				return TrackerResponse{}, err
 			}
 			content, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return TrackerResult{err, defaultResp}
+				return TrackerResponse{}, err
 			}
 			resp, err := DeserializeTrackerResponseHttp(content, req)
 			if err != nil {
-				return TrackerResult{err, defaultResp}
+				return TrackerResponse{}, err
 			}
 			if resp.trackerID != nil {
 				t.TrackerID = *resp.trackerID
 			}
 
-			return TrackerResult{nil, resp}
+			return resp, nil
 		}
 	case "udp":
-		return TrackerResult{Tracker_invalid_scheme_err, defaultResp}
+		return TrackerResponse{}, Tracker_invalid_scheme_err
 	default:
 		panic(Tracker_invalid_scheme_err)
 	}

@@ -6,8 +6,12 @@ import (
 	"net/netip"
 )
 
+type PeerEntry struct {
+	Pid    *PeerID
+	IpPort netip.AddrPort
+}
+
 type TrackerResponse struct {
-	Tracker_    *Tracker
 	Failure     *string
 	Warning     *string
 	trackerID   *string
@@ -16,7 +20,7 @@ type TrackerResponse struct {
 	Complete    int64
 	Incomplete  int64
 	Downloaded  int64
-	PeerList    []PeerEndpoint
+	PeerList    []PeerEntry
 }
 
 func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (TrackerResponse, error) {
@@ -100,7 +104,7 @@ func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (Tracke
 				return TrackerResponse{}, Tracker_invalid_resp_err
 			}
 
-			peerVal := PeerEndpoint{}
+			peerVal := PeerEntry{}
 			peerVal.Pid, err = NewPeerID(([]byte)(pid))
 			if err != nil {
 				panic(err)
@@ -135,8 +139,8 @@ func DeserializeTrackerResponseHttp(httpResp []byte, req TrackerRequest) (Tracke
 	return resp, nil
 }
 
-func parseV4CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
-	peerList := []PeerEndpoint{}
+func parseV4CompactPeers(peers []byte) ([]PeerEntry, bool) {
+	peerList := []PeerEntry{}
 
 	for {
 		if len(peers) == 0 {
@@ -148,10 +152,10 @@ func parseV4CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
 
 		parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 		if err != nil {
-			return []PeerEndpoint{}, false
+			return []PeerEntry{}, false
 		}
 
-		peerVal := PeerEndpoint{}
+		peerVal := PeerEntry{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 
@@ -160,8 +164,8 @@ func parseV4CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
 	return peerList, true
 }
 
-func parseV6CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
-	peerList := []PeerEndpoint{}
+func parseV6CompactPeers(peers []byte) ([]PeerEntry, bool) {
+	peerList := []PeerEntry{}
 
 	for {
 		if len(peers) == 0 {
@@ -182,10 +186,10 @@ func parseV6CompactPeers(peers []byte) ([]PeerEndpoint, bool) {
 			uint16(ip[15])|uint16(ip[14])<<8))
 
 		if err != nil {
-			return []PeerEndpoint{}, false
+			return []PeerEntry{}, false
 		}
 
-		peerVal := PeerEndpoint{}
+		peerVal := PeerEntry{}
 		peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port[1])|uint16(port[0])<<8)
 		peerList = append(peerList, peerVal)
 

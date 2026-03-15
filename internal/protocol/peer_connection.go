@@ -7,26 +7,20 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"time"
 )
 
-type PeerEndpoint struct {
-	Pid    *PeerID
-	IpPort netip.AddrPort
-}
-
 type PeerConnection struct {
+	Pid    PeerID
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	// keepAliveSelf *time.Ticker
 	keepAlivePeer *time.Timer
 	keepAliveFreq time.Duration
 	peerTimeout   time.Duration
 
-	conn  net.Conn
-	owner *Peer
+	conn    net.Conn
+	torrent *Torrent
 
 	in    chan peerMessage
 	out   chan peerMessage
@@ -49,7 +43,7 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 	c.AmInteresting = false
 	c.IsInteresting = false
 	c.bitfieldSent = false
-	c.owner = nil
+
 	c.keepAliveFreq = time.Minute
 	c.peerTimeout = time.Minute * 3
 	c.out = make(chan peerMessage)
@@ -57,55 +51,59 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 	c.queue = make(chan PeerRequest)
 
 	c.conn = conn
+	c.Pid = PeerID{}
+
+	c.torrent = nil
+	c.Pieces = nil
 
 	return &c
 }
 
-func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) (PeerID, error) {
+func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) error {
 	err := utils.SendHandshake(c.conn, infohash, clientPid)
 	if err != nil {
-		return [20]byte{}, err
+		return err
 	}
 
 	pid, ih, ok := utils.ReceiveHandshake(c.conn)
 	if !ok || ih != infohash {
-		return [20]byte{}, Peer_bad_handshake_err
+		return Peer_bad_handshake_err
 	}
 
-	return pid, nil
+	c.Pid = pid
+	return nil
 }
 
-func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (PeerID, *Torrent, error) {
+func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (*Torrent, error) {
 	pid, ih, ok := utils.ReceiveHandshake(c.conn)
 	if !ok {
-		return [20]byte{}, nil, Peer_bad_handshake_err
+		return nil, Peer_bad_handshake_err
 	}
 
 	torrent, ok := torrents[ih]
 	if !ok {
-		return [20]byte{}, nil, Peer_bad_handshake_err
+		return nil, Peer_bad_handshake_err
 	}
 
 	err := utils.SendHandshake(c.conn, ih, clientPid)
 
 	if err != nil {
-		return [20]byte{}, nil, err
+		return nil, err
 	}
 
-	return pid, torrent, nil
-}
-
-func (c *PeerConnection) attachPeer(p *Peer) {
-	c.ctx, c.cancel = context.WithCancelCause(p.ctx)
-	c.owner = p
+	c.Pid = pid
+	return torrent, nil
 }
 
 func (p *PeerConnection) start() {
-	if p.owner == nil {
-		panic("peer connection started without logical peer attached")
-	}
 	p.keepAlivePeer = time.NewTimer(p.peerTimeout)
 	go p.loop()
+}
+
+func (c *PeerConnection) attachTorrent(t *Torrent) {
+	c.ctx, c.cancel = context.WithCancelCause(t.ctx)
+	c.Pieces = utils.NewBitfield(uint32(len(t.Info.Pieces) / 20))
+	c.torrent = t
 }
 
 func (p *PeerConnection) loop() {
@@ -115,16 +113,9 @@ func (p *PeerConnection) loop() {
 		select {
 		case <-p.ctx.Done():
 			{
-				if p.owner.Pid == nil {
-					fmt.Printf(
-						"ANONYMOUS PEER DISCONNECTED BECAUSE: %v\n",
-						context.Cause(p.ctx).Error())
-				} else {
-					fmt.Printf(
-						"%v DISCONNECTED BECAUSE: %v\n",
-						p.owner.Pid.String(), context.Cause(p.ctx).Error())
-				}
-				p.owner.CloseConnection()
+				fmt.Printf(
+					"%v DISCONNECTED BECAUSE: %v\n",
+					p.Pid.String(), context.Cause(p.ctx).Error())
 				p.conn.Close()
 				return
 			}
@@ -175,20 +166,68 @@ func (p *PeerConnection) receiveLoop() {
 	}
 }
 
-func (p *PeerConnection) keepAlive() (time.Time, bool) {
+func (p *PeerConnection) KeepAlive() {
 	ka := peerMessage{
 		Peer:    p,
 		Kind:    KeepAlive,
 		Payload: nil,
 	}
 
-	if p == nil || p.ctx.Err() != nil {
-		return time.Now(), false
+	p.out <- ka
+}
+
+func (p *PeerConnection) SendBlock(res PeerBlockResponse) {
+	mess := peerMessage{}
+	mess.Kind = Piece
+	binary.LittleEndian.AppendUint32(mess.Payload, res.Idx)
+	binary.LittleEndian.AppendUint32(mess.Payload, res.Begin)
+	mess.Payload = append(mess.Payload, res.Block...)
+	p.out <- mess
+}
+
+func (p *PeerConnection) SendHave(idx uint32) {
+	mess := peerMessage{}
+	mess.Kind = Have
+	binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	p.out <- mess
+}
+
+func (p *PeerConnection) SendBitfield(bitfield *utils.Bitfield) {
+	mess := peerMessage{}
+	mess.Kind = Bitfield
+	mess.Payload = bitfield.Data()
+	p.out <- mess
+}
+
+func (p *PeerConnection) SendInterested(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Interested
+	} else {
+		mess.Kind = Interested
 	}
+	mess.Payload = nil
+	p.out <- mess
+}
 
-	go p.send(ka)
+func (p *PeerConnection) SendChoked(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Choke
+	} else {
+		mess.Kind = Unchoke
+	}
+	mess.Payload = nil
+	p.out <- mess
+}
 
-	return time.Now().Add(time.Minute), true
+func (p *PeerConnection) CancelRequest(req PeerRequest) {
+	mess := peerMessage{}
+	mess.Kind = Cancel
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
+	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+	p.out <- mess
 }
 
 func (p *PeerConnection) send(mess peerMessage) {
@@ -206,7 +245,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 	switch mess.Kind {
 	case KeepAlive:
 		{
-			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", p.owner.Pid.String())
+			fmt.Printf("KEEP ALIVE RECEIVED -> %v\n", p.Pid.String())
 			p.keepAlivePeer.Reset(p.peerTimeout)
 		}
 	case Choke:
@@ -243,7 +282,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 		}
 	case Have:
 		{
-			p.owner.in <- mess
+			p.torrent.ReceiveMessage(mess)
 		}
 	case Bitfield:
 		{
@@ -252,11 +291,11 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 				return
 			}
 			p.bitfieldSent = true
-			p.owner.in <- mess
+			p.torrent.ReceiveMessage(mess)
 		}
 	default:
 		{
-			p.owner.in <- mess
+			p.torrent.ReceiveMessage(mess)
 		}
 	}
 }

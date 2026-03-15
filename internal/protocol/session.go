@@ -83,6 +83,33 @@ func (s *Session) listenForPeers() {
 	}
 }
 
+func (s *Session) handshakePeer(conn net.Conn) {
+	c := newPeerConnection(conn)
+	t, err := c.handshakeIncomingPeer(s.Torrents, s.PeerID)
+	if err != nil {
+		conn.Close()
+		return
+	}
+
+	ipport, _ := netip.ParseAddrPort(conn.LocalAddr().String())
+
+	for _, p := range t.Swarm {
+		if p.Conn != nil && p.Endpoint == ipport {
+			conn.Close()
+			return
+		} else if p.Conn == nil && p.Endpoint == ipport {
+			p.Conn = c
+			break
+		}
+	}
+
+	peer := NewPeer(ipport)
+	peer.Conn = c
+
+	t.AddPeer(peer)
+	t.AddActivePeer(c)
+}
+
 func (s *Session) Start() {
 	go s.loop()
 }
@@ -99,23 +126,4 @@ func (s *Session) AddTorrent(t *Torrent) {
 func (s *Session) StopTorrent(t *Torrent) {
 	t.cancel()
 	delete(s.Torrents, t.Info.InfoHash)
-}
-
-func (s *Session) handshakePeer(conn net.Conn) {
-	c := newPeerConnection(conn)
-	pid, t, err := c.handshakeIncomingPeer(s.Torrents, s.PeerID)
-	if err != nil {
-		conn.Close()
-		return
-	}
-	ipport, _ := netip.ParseAddrPort(conn.LocalAddr().String())
-	e := PeerEndpoint{Pid: &pid, IpPort: ipport}
-	peer := NewPeer(t, e, s.PeerID)
-
-	peer.Pid = &pid
-	peer.Conn = c
-	peer.State = CONNECTED
-	c.attachPeer(peer)
-
-	c.start()
 }

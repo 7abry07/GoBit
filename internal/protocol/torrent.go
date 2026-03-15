@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 	"time"
 )
 
@@ -15,16 +16,17 @@ type Torrent struct {
 	cancel context.CancelFunc
 
 	Ses         *Session
-	PeerList    []*Peer
+	Swarm       []*Peer
+	ActivePeers []*PeerConnection
 	TrackerList []*Tracker
 	Info        TorrentFile
 
-	newPeer   chan *Peer
-	remPeer   chan *Peer
-	peerInbox chan peerMessage
+	newActivePeer chan *PeerConnection
+	newPeer       chan *Peer
+	remPeer       chan *Peer
+	peerInbox     chan peerMessage
 
-	remTracker   chan *Tracker
-	trackerInbox chan TrackerResult
+	remTracker chan *Tracker
 
 	Download int64
 	Upload   int64
@@ -40,13 +42,14 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.Ses = ses
 	torrent.Sched = event.NewScheduler()
 	torrent.Info = file
-	torrent.PeerList = []*Peer{}
+	torrent.Swarm = []*Peer{}
+	torrent.ActivePeers = []*PeerConnection{}
 	torrent.TrackerList = []*Tracker{}
+	torrent.newActivePeer = make(chan *PeerConnection)
 	torrent.newPeer = make(chan *Peer)
 	torrent.remPeer = make(chan *Peer)
 	torrent.peerInbox = make(chan peerMessage)
 	torrent.remTracker = make(chan *Tracker)
-	torrent.trackerInbox = make(chan TrackerResult)
 	torrent.Download = 0
 	torrent.Upload = 0
 	torrent.Left = int64(len(file.Pieces) / 20)
@@ -92,25 +95,40 @@ func (t *Torrent) loop() {
 			}
 		case p := <-t.newPeer:
 			{
-				t.PeerList = append(t.PeerList, p)
-				go t.DialPeerOrRetry(p)
+				t.Swarm = append(t.Swarm, p)
+				if p.Conn == nil {
+					go func() {
+						conn, _, _, err := t.DialPeer(p)
+						if err != nil {
+							delay := (time.Minute) * time.Duration(math.Pow(2, float64(p.FailureCnt)))
+							fmt.Printf("CONNECTION FAILED (retry in %v) -> %v\n", delay.Truncate(time.Second), err.Error())
+							t.SchedulePeerConnectionRetry(p, delay)
+							return
+						}
+						fmt.Printf("CONNECTION SUCCESS (attemps: 1) -> %v\n", string(conn.Pid.String()))
+						p.FailureCnt = 0
+						t.AddActivePeer(conn)
+						t.SchedulePeerKeepAlive(conn)
+
+						conn.SendBitfield(t.Picker.GetBitfield())
+						if t.Picker.calculateInterested(conn) {
+							conn.SendInterested(true)
+						}
+					}()
+				}
+			}
+		case conn := <-t.newActivePeer:
+			{
+				t.ActivePeers = append(t.ActivePeers, conn)
+				conn.attachTorrent(t)
+				conn.start()
 			}
 		case p := <-t.remPeer:
 			{
-				for i, val := range t.PeerList {
+				for i, val := range t.Swarm {
 					if val == p {
-						t.PeerList = append(t.PeerList[:i], t.PeerList[i+1:]...)
+						t.Swarm = append(t.Swarm[:i], t.Swarm[i+1:]...)
 					}
-				}
-				t.Picker.DecRefBitfield(p.Pieces)
-				if p.Pid == nil {
-					fmt.Printf(
-						"ANONYMOUS PEER REMOVED BECAUSE: %v\n",
-						context.Cause(p.ctx))
-				} else {
-					fmt.Printf(
-						"%v REMOVED BECAUSE: %v\n",
-						p.Pid.String(), context.Cause(p.ctx))
 				}
 			}
 		case mess := <-t.peerInbox:
@@ -131,13 +149,70 @@ func (t *Torrent) loop() {
 	}
 }
 
-func (t *Torrent) Start() {
-	go t.loop()
-	for _, announce := range t.TrackerList {
-		//
-		fmt.Printf("ANNOUNCING TO [%v]\n", announce.Announce.String())
-		//
-		go t.AnnounceAndSchedule(announce)
+func (t *Torrent) DialPeer(p *Peer) (*PeerConnection, int, time.Duration, error) {
+	conn, err := net.DialTimeout("tcp", p.Endpoint.String(), time.Second*3)
+	delay := (time.Minute) * time.Duration(math.Pow(2, float64(p.FailureCnt)))
+	if err != nil {
+		p.FailureCnt++
+		return nil, 0, delay, err
+	}
+
+	peerConn := newPeerConnection(conn)
+	err = peerConn.handshakePeer(t.Info.InfoHash, t.Ses.PeerID)
+
+	if err != nil {
+		p.FailureCnt++
+		return nil, 0, delay, err
+	}
+
+	failureCnt := p.FailureCnt
+	p.FailureCnt = 0
+	return peerConn, failureCnt + 1, 0, nil
+}
+
+func (t *Torrent) SchedulePeerConnectionRetry(p *Peer, startingDelay time.Duration) {
+	retryTask := event.Task{
+		Fn: func() (time.Time, bool) {
+			conn, attempts, retryIn, err := t.DialPeer(p)
+			if err != nil {
+				fmt.Printf("CONNECTION FAILED (retry in %v) -> %v\n", retryIn.Truncate(time.Second), err.Error())
+				return time.Now().Add(retryIn), true
+			}
+			fmt.Printf("CONNECTION SUCCESS (attemps: %v) -> %v\n", attempts, string(conn.Pid.String()))
+
+			t.AddActivePeer(conn)
+			t.SchedulePeerKeepAlive(conn)
+
+			conn.SendBitfield(t.Picker.GetBitfield())
+			if t.Picker.calculateInterested(conn) {
+				conn.SendInterested(true)
+			}
+			return time.Now(), false
+		},
+		RunAt: time.Now().Add(startingDelay),
+	}
+	go t.Sched.Schedule(retryTask)
+}
+
+func (t *Torrent) SchedulePeerKeepAlive(c *PeerConnection) {
+	keepAliveTask := event.Task{
+		Fn: func() (time.Time, bool) {
+			defer fmt.Printf("KEEP ALIVE SENT -> %v\n", c.Pid.String())
+			if c == nil {
+				return time.Now(), false
+			}
+			go c.KeepAlive()
+			return time.Now().Add(c.keepAliveFreq), true
+		},
+		RunAt: time.Now().Add(c.keepAliveFreq),
+	}
+	go t.Sched.Schedule(keepAliveTask)
+}
+
+func (t *Torrent) OnAnnounceResponse(entries []PeerEntry) {
+	for _, entry := range entries {
+		peer := NewPeer(entry.IpPort)
+		t.AddPeer(peer)
 	}
 }
 
@@ -161,62 +236,27 @@ func (t *Torrent) handleIncomingMessage(mess peerMessage) {
 	}
 }
 
-func (t *Torrent) dialPeer(p *Peer) (time.Time, bool) {
-	err := p.TryConnect()
+func (t *Torrent) Start() {
+	go t.loop()
+	for _, announce := range t.TrackerList {
+		fmt.Printf("ANNOUNCING TO -> [%v]\n", announce.Announce.String())
+		go func() {
+			interval, ok := announce.SendAnnounce(TrackerStarted)
+			if !ok {
+				t.RemoveTracker(announce)
+				return
+			}
 
-	if err != nil {
-		delay := (time.Second * 30) * time.Duration(math.Pow(2, float64(p.failureCnt)))
-		fmt.Printf("CONNECTION FAILED (should retry in %v) -> %v\n", delay.Truncate(time.Second), err.Error())
-		return time.Now().Add(delay), true
+			announceTask := event.Task{
+				Fn: func() (time.Time, bool) {
+					return announce.SendAnnounce(TrackerNone)
+				},
+				RunAt: interval,
+			}
+
+			go t.Sched.Schedule(announceTask)
+		}()
 	}
-
-	fmt.Printf("CONNECTION SUCCESS -> %v\n", string(p.Pid.String()))
-	p.SendBitfield(t.Picker.GetBitfield())
-	if t.Picker.calculateInterested(p) {
-		p.SendInterested(true)
-	}
-
-	return time.Now(), false
-}
-
-func (t *Torrent) DialPeerOrRetry(p *Peer) {
-	retryAt, retry := t.dialPeer(p)
-	if retry {
-		retryTask := event.Task{
-			Fn: func() (time.Time, bool) {
-				return t.dialPeer(p)
-			},
-			RunAt: retryAt,
-		}
-		go t.Sched.Schedule(retryTask)
-		return
-	}
-
-	keepAliveTask := event.Task{
-		Fn: func() (time.Time, bool) {
-			defer fmt.Println("KEEP ALIVE SENT")
-			return p.Conn.keepAlive()
-		},
-		RunAt: time.Now().Add(time.Minute),
-	}
-	go t.Sched.Schedule(keepAliveTask)
-}
-
-func (t *Torrent) AnnounceAndSchedule(tracker *Tracker) {
-	interval, ok := tracker.SendAnnounce(TrackerStarted)
-	if !ok {
-		t.RemoveTracker(tracker)
-		return
-	}
-
-	announceTask := event.Task{
-		Fn: func() (time.Time, bool) {
-			return tracker.SendAnnounce(TrackerNone)
-		},
-		RunAt: interval,
-	}
-
-	go t.Sched.Schedule(announceTask)
 }
 
 func (t *Torrent) Stop() {
@@ -227,9 +267,12 @@ func (t *Torrent) RemovePeer(p *Peer) {
 	t.remPeer <- p
 }
 
-func (t *Torrent) AddPeer(e PeerEndpoint) {
-	p := NewPeer(t, e, t.Ses.PeerID)
+func (t *Torrent) AddPeer(p *Peer) {
 	t.newPeer <- p
+}
+
+func (t *Torrent) AddActivePeer(p *PeerConnection) {
+	t.newActivePeer <- p
 }
 
 func (t *Torrent) ReceiveMessage(mess peerMessage) {
@@ -238,8 +281,4 @@ func (t *Torrent) ReceiveMessage(mess peerMessage) {
 
 func (t *Torrent) RemoveTracker(tracker *Tracker) {
 	t.remTracker <- tracker
-}
-
-func (t *Torrent) ReceiveTracker(res TrackerResult) {
-	t.trackerInbox <- res
 }
