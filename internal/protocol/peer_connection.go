@@ -17,7 +17,6 @@ type PeerConnection struct {
 	cancel context.CancelCauseFunc
 
 	keepAlivePeer *time.Timer
-	keepAliveFreq time.Duration
 	peerTimeout   time.Duration
 
 	conn    net.Conn
@@ -45,7 +44,6 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 	c.IsInteresting = false
 	c.bitfieldSent = false
 
-	c.keepAliveFreq = time.Minute
 	c.peerTimeout = time.Minute * 3
 	c.out = make(chan peerMessage)
 	c.in = make(chan peerMessage)
@@ -118,9 +116,7 @@ func (p *PeerConnection) loop() {
 		select {
 		case <-p.ctx.Done():
 			{
-				fmt.Printf(
-					"%v DISCONNECTED BECAUSE: %v\n",
-					p.Pid.String(), context.Cause(p.ctx).Error())
+				p.torrent.RemoveActiveConnection(p)
 				p.conn.Close()
 				return
 			}
@@ -305,87 +301,60 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 			p.keepAlivePeer.Reset(p.peerTimeout)
 		}
 	case Choke:
-		{
-			if mess.Payload != nil {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-			p.AmChoked = true
+		if mess.Payload != nil {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Unchoke:
-		{
-			if mess.Payload != nil {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-			p.AmChoked = false
+		if mess.Payload != nil {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Interested:
-		{
-			if mess.Payload != nil {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-			p.AmInteresting = true
+		if mess.Payload != nil {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Uninterested:
-		{
-			if mess.Payload != nil {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-			p.AmInteresting = false
+		if mess.Payload != nil {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Have:
-		{
-			if len(mess.Payload) != 4 {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-			idx := binary.LittleEndian.Uint32(mess.Payload)
-			p.Pieces.Set(idx, true)
-			p.torrent.ReceiveMessage(mess)
+		if len(mess.Payload) != 4 {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Bitfield:
-		{
-			if p.bitfieldSent {
-				p.cancel(Peer_double_bitfield)
-				return
-			}
-
-			ok := p.Pieces.SetBitfield(mess.Payload)
-			if !ok {
-				p.cancel(Peer_bad_message_err)
-				return
-			}
-
-			p.bitfieldSent = true
-			p.torrent.ReceiveMessage(mess)
+		if p.bitfieldSent {
+			p.cancel(Peer_double_bitfield)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Request:
-		{
-			if len(mess.Payload) != 13 {
-				p.cancel(Peer_bad_message_err)
-			}
-			p.torrent.ReceiveMessage(mess)
+		if len(mess.Payload) != 13 {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Piece:
-		{
-			if uint32(len(mess.Payload)) != 9+p.torrent.Picker.blockLength {
-				p.cancel(Peer_bad_message_err)
-			}
-			p.torrent.ReceiveMessage(mess)
+		if uint32(len(mess.Payload)) != 9+p.torrent.Picker.blockLength {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	case Cancel:
-		{
-			if len(mess.Payload) != 13 {
-				p.cancel(Peer_bad_message_err)
-			}
-			p.torrent.ReceiveMessage(mess)
+		if len(mess.Payload) != 13 {
+			p.cancel(Peer_bad_message_err)
+			return
 		}
+		p.torrent.ReceiveMessage(mess)
 	default:
-		{
-			p.cancel(Peer_unrecognized_mess_err)
-		}
+		p.cancel(Peer_unrecognized_mess_err)
 	}
 }

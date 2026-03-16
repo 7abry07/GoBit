@@ -4,7 +4,7 @@ import "errors"
 
 var (
 	Torrent_root_not_dict_err             = errors.New("the root structure is not a dictionary")
-	Torrent_missing_announce_err          = errors.New("the mandatory field 'announce' is missing")
+	Torrent_missing_announce_err          = errors.New("the mandatory field 'announce' or 'announce-list' is missing")
 	Torrent_missing_info_err              = errors.New("the mandatory field 'info' is missing")
 	Torrent_missing_name_err              = errors.New("the mandatory field 'key' is missing")
 	Torrent_missing_pieces_err            = errors.New("the mandatory field 'pieces' is missing")

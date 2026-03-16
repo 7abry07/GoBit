@@ -22,7 +22,7 @@ type fileinfo struct {
 }
 
 type TorrentFile struct {
-	Announce    url.URL
+	Announce    *url.URL
 	Name        string
 	Pieces      []byte
 	InfoHash    [20]byte
@@ -75,7 +75,8 @@ func parse(input string) (TorrentFile, error) {
 	}
 
 	announceVal, ok := root.FindStr("announce")
-	if !ok {
+	announce_list, announcelistOk := parseAnnounceList(root)
+	if !ok && !announcelistOk {
 		return TorrentFile{}, Torrent_missing_announce_err
 	}
 	announce, err := url.Parse(string(announceVal))
@@ -102,7 +103,6 @@ func parse(input string) (TorrentFile, error) {
 	creation_date, creationdateOk := root.FindInt("creation date")
 	private, privateOk := root.FindInt("private")
 
-	announce_list, announcelistOk := parseAnnounceList(root)
 	length, lengthOk := info.FindInt("length")
 	files, filesresOk := parseFiles(info)
 	if lengthOk && filesresOk {
@@ -112,7 +112,7 @@ func parse(input string) (TorrentFile, error) {
 		return TorrentFile{}, Torrent_both_length_files_missing_err
 	}
 
-	f.Announce = *announce
+	f.Announce = announce
 	f.Name = string(name)
 	f.Pieces = []byte(pieces)
 	f.PieceLength = uint64(pieceLen)

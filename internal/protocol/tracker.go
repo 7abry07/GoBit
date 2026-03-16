@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 type Tracker struct {
@@ -42,14 +41,27 @@ func NewTracker(announce url.URL, torrent *Torrent, session *Session) (*Tracker,
 	}
 	t.TrackerID = ""
 	t.torr = torrent
-	t.ctx, t.cancel = context.WithCancelCause(torrent.ctx)
 	t.clientPid = session.PeerID
 	t.port = session.Port
+	t.ctx, t.cancel = context.WithCancelCause(torrent.ctx)
+
+	go t.loop()
 
 	return &t, nil
 }
 
-func (t *Tracker) SendAnnounce(event TrackerEventType) (time.Time, bool) {
+func (t *Tracker) loop() {
+	select {
+	case <-t.ctx.Done():
+		{
+			go t.SendAnnounce(TrackerStopped)
+			t.torr.RemoveTracker(t)
+			return
+		}
+	}
+}
+
+func (t *Tracker) SendAnnounce(event TrackerEventType) (TrackerResponse, bool) {
 	req := TrackerRequest{}
 	req.Compact = 1
 	req.Downloaded = t.torr.Download
@@ -66,22 +78,13 @@ func (t *Tracker) SendAnnounce(event TrackerEventType) (time.Time, bool) {
 	res, err := t.send(req)
 	if err != nil {
 		t.cancel(err)
-		return time.Now(), false
+		return TrackerResponse{}, false
 	}
 	if res.Failure != nil {
-		err := fmt.Errorf("announce failed (%v)", res.Failure)
-		t.cancel(err)
-		return time.Now(), false
+		t.cancel(fmt.Errorf("announce failed (%v)", *res.Failure))
+		return TrackerResponse{}, false
 	}
-
-	fmt.Printf("[%v] -> SENDING PEERS (reannounce in %v)\n", t.Announce.String(), (time.Second * time.Duration(res.Interval)))
-
-	for _, entry := range res.PeerList {
-		peer := NewPeer(entry.IpPort)
-		go t.torr.AddPeer(peer)
-	}
-
-	return time.Now().Add(time.Second * time.Duration(res.Interval)), true
+	return res, true
 }
 
 func (t *Tracker) send(req TrackerRequest) (TrackerResponse, error) {

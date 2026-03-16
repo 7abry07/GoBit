@@ -2,19 +2,19 @@ package event
 
 import (
 	"container/heap"
-	"sync"
 	"time"
 )
 
 type Scheduler struct {
 	taskTimer *time.Timer
 	tasks     taskPQueue
-	mt        sync.Mutex
+	taskChan  chan Task
 }
 
 func NewScheduler() *Scheduler {
 	s := Scheduler{}
 	s.taskTimer = time.NewTimer(0)
+	s.taskChan = make(chan Task)
 	<-s.taskTimer.C
 	heap.Init(&s.tasks)
 
@@ -23,25 +23,7 @@ func NewScheduler() *Scheduler {
 }
 
 func (s *Scheduler) Schedule(t Task) {
-	s.mt.Lock()
-	defer s.mt.Unlock()
-
-	item := Item{
-		task: t,
-	}
-
-	if len(s.tasks) == 0 {
-		heap.Push(&s.tasks, &item)
-		s.taskTimer.Reset(time.Until(t.RunAt))
-		return
-	}
-
-	original := s.tasks[0]
-	heap.Push(&s.tasks, &item)
-
-	if original != s.tasks[0] {
-		s.taskTimer.Reset(time.Until(item.task.RunAt))
-	}
+	s.taskChan <- t
 }
 
 func (s *Scheduler) runAndReschedule(task Task) {
@@ -51,19 +33,43 @@ func (s *Scheduler) runAndReschedule(task Task) {
 			Fn:    task.Fn,
 			RunAt: nextTime,
 		}
-		go s.Schedule(newTask)
+		s.Schedule(newTask)
 	}
 }
 
 func (s *Scheduler) loop() {
-	for range s.taskTimer.C {
-		task := heap.Pop(&s.tasks).(*Item).task
+	for {
+		select {
+		case t := <-s.taskChan:
+			{
+				item := Item{
+					task: t,
+				}
 
-		go s.runAndReschedule(task)
+				if len(s.tasks) == 0 {
+					heap.Push(&s.tasks, &item)
+					s.taskTimer.Reset(time.Until(t.RunAt))
+					continue
+				}
 
-		if len(s.tasks) != 0 {
-			newTask := s.tasks[0].task
-			s.taskTimer.Reset(time.Until(newTask.RunAt))
+				original := s.tasks[0]
+				heap.Push(&s.tasks, &item)
+
+				if original != s.tasks[0] {
+					s.taskTimer.Reset(time.Until(item.task.RunAt))
+				}
+			}
+		case <-s.taskTimer.C:
+			{
+				task := heap.Pop(&s.tasks).(*Item).task
+
+				go s.runAndReschedule(task)
+
+				if len(s.tasks) != 0 {
+					newTask := s.tasks[0].task
+					s.taskTimer.Reset(time.Until(newTask.RunAt))
+				}
+			}
 		}
 	}
 }

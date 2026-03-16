@@ -103,11 +103,11 @@ func (s *Session) handshakePeer(conn net.Conn) {
 		}
 	}
 
-	peer := NewPeer(ipport)
-	peer.Conn = c
+	peer := NewPeer(t, ipport)
 
+	peer.Conn = c
 	t.AddPeer(peer)
-	t.AddActivePeer(c)
+	t.AddActiveConnection(c)
 }
 
 func (s *Session) Start() {

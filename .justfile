@@ -3,8 +3,8 @@ alias b := build
 alias d := debug
 alias t := test
 
-@run args="":
-    go run cmd/app/main.go {{ args }}
+@run flags="":
+    go run {{ flags }} cmd/app/main.go 
 
 @build:
     go build cmd/app/main.go

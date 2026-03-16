@@ -2,12 +2,32 @@ package main
 
 import (
 	"GoBit/internal/protocol"
-	// "fmt"
+	"bufio"
+	"fmt"
+	"os"
 	// "time"
 )
 
 func main() {
-	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/one_piece.torrent")
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("1.Naruto\n2.One Piece\n3.Crime101\n\n-> ")
+	opt, err := reader.ReadString('\n')
+	if err != nil {
+		panic(err)
+	}
+
+	file := protocol.TorrentFile{}
+
+	if opt == "1\n" {
+		file, err = protocol.ParseTorrentFile("internal/tests/protocol/test_files/naruto.torrent")
+	} else if opt == "2\n" {
+		file, err = protocol.ParseTorrentFile("internal/tests/protocol/test_files/one_piece.torrent")
+	} else if opt == "3\n" {
+		file, err = protocol.ParseTorrentFile("internal/tests/protocol/test_files/crime101.torrent")
+	} else {
+		panic("invalid option")
+	}
+
 	if err != nil {
 		panic(err)
 	}
@@ -24,4 +44,5 @@ func main() {
 
 	for {
 	}
+
 }
