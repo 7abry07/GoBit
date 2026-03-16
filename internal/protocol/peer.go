@@ -12,9 +12,10 @@ type Peer struct {
 
 	Endpoint netip.AddrPort
 
-	FailureCnt      int
-	TotalDownloaded int
-	TotalUploaded   int
+	FailureCnt int
+
+	PrevTotalDownloaded int
+	PrevTotalUploaded   int
 }
 
 func NewPeer(t *Torrent, e netip.AddrPort) *Peer {
@@ -26,8 +27,8 @@ func NewPeer(t *Torrent, e netip.AddrPort) *Peer {
 	peer.Endpoint = e
 
 	peer.FailureCnt = 0
-	peer.TotalDownloaded = 0
-	peer.TotalUploaded = 0
+	peer.PrevTotalDownloaded = 0
+	peer.PrevTotalUploaded = 0
 
 	return &peer
 }

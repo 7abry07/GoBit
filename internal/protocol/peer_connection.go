@@ -16,11 +16,21 @@ type PeerConnection struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
+	peer *Peer
+
 	keepAlivePeer *time.Timer
 	peerTimeout   time.Duration
 
 	conn    net.Conn
 	torrent *Torrent
+
+	lastTickTime     time.Time
+	totalDownloaded  int
+	totalUploaded    int
+	lastTickDownload int
+	lastTickUpload   int
+	downloadRate     float64
+	uploadRate       float64
 
 	in    chan peerMessage
 	out   chan peerMessage
@@ -48,6 +58,14 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 	c.out = make(chan peerMessage)
 	c.in = make(chan peerMessage)
 	c.queue = make(chan PeerRequest)
+
+	c.lastTickTime = time.Now()
+	c.totalDownloaded = 0
+	c.totalUploaded = 0
+	c.lastTickDownload = 0
+	c.lastTickUpload = 0
+	c.downloadRate = 0
+	c.uploadRate = 0
 
 	c.conn = conn
 	c.Pid = PeerID{}
@@ -118,6 +136,7 @@ func (p *PeerConnection) loop() {
 			{
 				p.torrent.RemoveActiveConnection(p)
 				p.conn.Close()
+				p.peer.Conn = nil
 				return
 			}
 		case mess := <-p.in:
@@ -205,7 +224,7 @@ func (p *PeerConnection) SendInterested(v bool) {
 	if v {
 		mess.Kind = Interested
 	} else {
-		mess.Kind = Interested
+		mess.Kind = Uninterested
 	}
 	mess.Payload = nil
 	p.out <- mess
@@ -229,6 +248,22 @@ func (p *PeerConnection) CancelRequest(req PeerRequest) {
 	binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
 	binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
 	p.out <- mess
+}
+
+func (p *PeerConnection) UpdateRate(now time.Time) {
+	dt := now.Sub(p.lastTickTime).Seconds()
+	deltaDownload := p.totalDownloaded - p.lastTickDownload
+	deltaUpload := p.totalUploaded - p.lastTickUpload
+	instantDrate := float64(deltaDownload) / dt
+	instantUrate := float64(deltaUpload) / dt
+
+	const alpha = 0.3
+	p.downloadRate = alpha*instantDrate + (1-alpha)*p.downloadRate
+	p.uploadRate = alpha*instantUrate + (1-alpha)*p.uploadRate
+
+	p.lastTickDownload = p.totalDownloaded
+	p.lastTickUpload = p.totalUploaded
+	p.lastTickTime = now
 }
 
 func (p *PeerConnection) send(mess peerMessage) {

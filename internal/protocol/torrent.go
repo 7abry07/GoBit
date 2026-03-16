@@ -123,10 +123,8 @@ func (t *Torrent) loop() {
 				conn.start()
 
 				t.SchedulePeerKeepAlive(conn, time.Minute+time.Second*30)
+				t.ScheduleUpdatePeerRate(conn, time.Second)
 				conn.SendBitfield(t.Picker.GetBitfield())
-				if t.Picker.calculateInterested(conn) {
-					conn.SendInterested(true)
-				}
 				fmt.Printf("CONNECTED -> %v\n", conn.Pid.String())
 			}
 		case conn := <-t.remActivePeer:
@@ -136,7 +134,7 @@ func (t *Torrent) loop() {
 						t.ActivePeers = append(t.ActivePeers[:i], t.ActivePeers[i+1:]...)
 						fmt.Printf(
 							"DISCONNECTED -> %v BECAUSE: %v\n",
-							conn.Pid.String(), context.Cause(conn.ctx).Error())
+							conn.Pid.String(), context.Cause(conn.ctx))
 					}
 				}
 			}
@@ -169,6 +167,7 @@ func (t *Torrent) loop() {
 func (t *Torrent) DialPeer(p *Peer) (time.Duration, error) {
 	conn, err := net.DialTimeout("tcp", p.Endpoint.String(), time.Second*3)
 	peerConn := newPeerConnection(conn)
+	peerConn.peer = p
 
 	if err == nil {
 		err = peerConn.handshakePeer(t.Info.InfoHash, t.Ses.PeerID)
@@ -293,6 +292,20 @@ func (t *Torrent) ScheduleTrackerAnnounce(announce *Tracker, interval time.Time)
 	t.Sched.Schedule(announceTask)
 }
 
+func (t *Torrent) ScheduleUpdatePeerRate(p *PeerConnection, tick time.Duration) {
+	updateRateTask := event.Task{
+		Fn: func() (time.Time, bool) {
+			if p == nil || p.ctx.Err != nil {
+				return time.Now(), false
+			}
+			p.UpdateRate(time.Now())
+			return time.Now().Add(tick), true
+		},
+		RunAt: time.Now().Add(tick),
+	}
+	t.Sched.Schedule(updateRateTask)
+}
+
 func (t *Torrent) handleIncomingMessage(mess peerMessage) {
 	switch mess.Kind {
 	case Choke:
@@ -316,5 +329,12 @@ func (t *Torrent) handleIncomingMessage(mess peerMessage) {
 			panic("unexpected error, bitfield size doesnt match")
 		}
 		mess.Peer.bitfieldSent = true
+		if t.Picker.calculateInterested(mess.Peer) {
+			mess.Peer.SendInterested(true)
+		}
+	case Request:
+	case Piece:
+		mess.Peer.totalDownloaded += len(mess.Payload)
+	case Cancel:
 	}
 }

@@ -106,6 +106,7 @@ func (s *Session) handshakePeer(conn net.Conn) {
 	peer := NewPeer(t, ipport)
 
 	peer.Conn = c
+	c.peer = peer
 	t.AddPeer(peer)
 	t.AddActiveConnection(c)
 }
