@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,20 +10,13 @@ import (
 )
 
 type Tracker struct {
-	ctx    context.Context
-	cancel context.CancelCauseFunc
-
-	TrackerID string
-	Announce  url.URL
-	Scrape    url.URL
-
-	torr *Torrent
-
-	clientPid PeerID
-	port      uint16
+	TrackerID  string
+	Announce   url.URL
+	Scrape     url.URL
+	FailureCnt int
 }
 
-func NewTracker(announce url.URL, torrent *Torrent, session *Session) (*Tracker, error) {
+func NewTracker(announce url.URL) (*Tracker, error) {
 	t := Tracker{}
 
 	if announce.Scheme != "http" {
@@ -40,51 +33,32 @@ func NewTracker(announce url.URL, torrent *Torrent, session *Session) (*Tracker,
 		t.Scrape = announce
 	}
 	t.TrackerID = ""
-	t.torr = torrent
-	t.clientPid = session.PeerID
-	t.port = session.Port
-	t.ctx, t.cancel = context.WithCancelCause(torrent.ctx)
-
-	go t.loop()
 
 	return &t, nil
 }
 
-func (t *Tracker) loop() {
-	select {
-	case <-t.ctx.Done():
-		{
-			go t.SendAnnounce(TrackerStopped)
-			t.torr.RemoveTracker(t)
-			return
-		}
-	}
-}
-
-func (t *Tracker) SendAnnounce(event TrackerEventType) (TrackerResponse, bool) {
+func (t *Tracker) SendAnnounce(event TrackerEventType, torrent *Torrent, clientPid PeerID, port uint16) (TrackerResponse, error) {
 	req := TrackerRequest{}
 	req.Compact = 1
-	req.Downloaded = t.torr.Download
-	req.Uploaded = t.torr.Upload
+	req.Downloaded = torrent.Download
+	req.Uploaded = torrent.Upload
 	req.Event = event
-	req.Infohash = t.torr.Info.InfoHash
+	req.Infohash = torrent.Info.InfoHash
 	req.Kind = TrackerAnnounce
-	req.Left = t.torr.Left
+	req.Left = torrent.Left
 	req.NoPID = 1
 	req.Numwant = 200
-	req.PeerID = t.clientPid
-	req.Port = t.port
+	req.PeerID = clientPid
+	req.Port = port
 
 	res, err := t.send(req)
 	if err != nil {
-		t.cancel(err)
-		return TrackerResponse{}, false
+		return TrackerResponse{}, errors.New("http/deserialization error in tracker response")
 	}
 	if res.Failure != nil {
-		t.cancel(fmt.Errorf("announce failed (%v)", *res.Failure))
-		return TrackerResponse{}, false
+		return TrackerResponse{}, fmt.Errorf("tracker failure string -> %v", *res.Failure)
 	}
-	return res, true
+	return res, nil
 }
 
 func (t *Tracker) send(req TrackerRequest) (TrackerResponse, error) {

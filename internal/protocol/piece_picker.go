@@ -39,15 +39,12 @@ type pieceInfo struct {
 }
 
 type PiecePicker struct {
-	pieces []pieceInfo
-
-	blockLength uint32
-	pieceCount  uint32
+	pieces     []pieceInfo
+	pieceCount uint32
 }
 
-func NewPiecePicker(t *Torrent, blockLength uint32) *PiecePicker {
+func NewPiecePicker(t *Torrent) *PiecePicker {
 	p := PiecePicker{}
-	p.blockLength = blockLength
 	p.pieceCount = uint32(len(t.Info.Pieces) / 20)
 	p.pieces = make([]pieceInfo, p.pieceCount)
 
@@ -62,7 +59,7 @@ func NewPiecePicker(t *Torrent, blockLength uint32) *PiecePicker {
 	return &p
 }
 
-func (p *PiecePicker) PickPiece(peer *PeerConnection) (pieceInfo, bool) {
+func (p *PiecePicker) PickPiece(peer ActivePeerState) (pieceInfo, bool) {
 	if peer.IsChoked {
 		return pieceInfo{}, false
 	}
@@ -138,7 +135,7 @@ func (p *PiecePicker) DecRefBitfield(bf *utils.Bitfield) bool {
 	return true
 }
 
-func (p *PiecePicker) calculateInterested(peer *PeerConnection) bool {
+func (p *PiecePicker) calculateInterested(peer ActivePeerState) bool {
 	for i, piece := range p.pieces {
 		if piece.state == DONT_HAVE && peer.Pieces.IsSet(uint32(i)) {
 			return true

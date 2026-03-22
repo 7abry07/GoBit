@@ -26,7 +26,7 @@ var (
 	Peer_bad_handshake_err      = errors.New("the handshake request or response of the peer is invalid")
 	Peer_handshake_err          = errors.New("there was an error during the handshake")
 	Peer_handshake_infohash_err = errors.New("the infohashes in the handshake don't match")
-	Peer_bad_message_err        = errors.New("the message sent to the peer is invalid")
+	Peer_bad_message_err        = errors.New("the message received from the peer is invalid")
 	Peer_id_mismatch_err        = errors.New("the peer id of the handshake doesn't match the one received from the tracker")
 	Peer_unrecognized_mess_err  = errors.New("the message of the peer is of an unrecognized type")
 	Peer_double_bitfield        = errors.New("double bitfield received")

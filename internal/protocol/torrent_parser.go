@@ -27,6 +27,7 @@ type TorrentFile struct {
 	Pieces      []byte
 	InfoHash    [20]byte
 	PieceLength uint64
+	BlockLength uint64
 	Private     bool
 
 	AnnounceList *[][]url.URL
@@ -116,6 +117,7 @@ func parse(input string) (TorrentFile, error) {
 	f.Name = string(name)
 	f.Pieces = []byte(pieces)
 	f.PieceLength = uint64(pieceLen)
+	f.BlockLength = 16 * 1024
 	f.Name = string(name)
 
 	if announcelistOk {

@@ -123,10 +123,12 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 	output := []byte{}
 	length := make([]byte, 4)
 
-	binary.BigEndian.PutUint32(length, uint32(len(m.Payload)+1))
-
-	output = append(output, length...)
-	if m.Kind != KeepAlive {
+	if m.Kind == KeepAlive {
+		binary.BigEndian.PutUint32(length, uint32(len(m.Payload)))
+		output = append(output, length...)
+	} else {
+		binary.BigEndian.PutUint32(length, uint32(len(m.Payload)+1))
+		output = append(output, length...)
 		output = append(output, byte(m.Kind))
 	}
 

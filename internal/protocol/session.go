@@ -17,6 +17,7 @@ type Session struct {
 	incomingPeer chan net.Conn
 
 	listener net.Listener
+
 	PeerID   [20]byte
 	Port     uint16
 	Torrents map[[20]byte]*Torrent
@@ -103,12 +104,22 @@ func (s *Session) handshakePeer(conn net.Conn) {
 		}
 	}
 
-	peer := NewPeer(t, ipport)
+	peer := NewPeer(ipport)
 
 	peer.Conn = c
-	c.peer = peer
-	t.AddPeer(peer)
-	t.AddActiveConnection(c)
+	c.Peer = peer
+
+	addedEv := PeerAddedEv{
+		Sender: peer,
+	}
+	connectedEv := PeerConnectedEv{
+		Sender:   c,
+		Attempts: 0,
+	}
+	t.SignalEvent(addedEv)
+	t.SignalEvent(connectedEv)
+	// t.AddPeer(peer)
+	// t.AddActiveConnection(c)
 }
 
 func (s *Session) Start() {
