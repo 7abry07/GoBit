@@ -1,6 +1,8 @@
 package protocol
 
-import "GoBit/internal/utils"
+import (
+	"github.com/bits-and-blooms/bitset"
+)
 
 type Event interface {
 	IsEvent()
@@ -41,33 +43,33 @@ type PeerInterestedEv struct {
 
 type PeerHaveEv struct {
 	Sender PeerID
-	Idx    int
+	Idx    uint32
 }
 
 type PeerBitfieldEv struct {
 	Sender   PeerID
-	Bitfield *utils.Bitfield
+	Bitfield *bitset.BitSet
 }
 
 type PeerRequestEv struct {
 	Sender PeerID
-	Idx    int
-	Begin  int
-	Length int
+	Idx    uint32
+	Begin  uint32
+	Length uint32
 }
 
 type PeerPieceEv struct {
 	Sender PeerID
-	Idx    int
-	Begin  int
+	Idx    uint32
+	Begin  uint32
 	Block  []byte
 }
 
 type PeerCancelEv struct {
 	Sender PeerID
-	Idx    int
-	Begin  int
-	Length int
+	Idx    uint32
+	Begin  uint32
+	Length uint32
 }
 
 func (ev PeerConnectedEv) IsEvent()    {}

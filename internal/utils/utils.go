@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"github.com/bits-and-blooms/bitset"
 	"math/rand"
 	"net"
 )
@@ -29,4 +30,34 @@ func GenerateRandomPeerId() [20]byte {
 	pid = append(pid, randomNumbers...)
 
 	return [20]byte(pid)
+}
+
+func BitSetToBytes(b *bitset.BitSet, bits uint) []byte {
+	byteLen := (bits + 7) / 8
+	out := make([]byte, byteLen)
+
+	for i := range bits {
+		if b.Test(i) {
+			byteIndex := i / 8
+			bitIndex := 7 - (i % 8)
+			out[byteIndex] |= 1 << bitIndex
+		}
+	}
+
+	return out
+}
+
+func BytesToBitSet(data []byte, bits uint) *bitset.BitSet {
+	b := bitset.New(bits)
+
+	for i := range bits {
+		byteIndex := i / 8
+		bitIndex := 7 - (i % 8)
+
+		if data[byteIndex]&(1<<bitIndex) != 0 {
+			b.Set(i)
+		}
+	}
+
+	return b
 }

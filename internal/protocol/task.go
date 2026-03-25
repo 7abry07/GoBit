@@ -12,20 +12,27 @@ type PeerKeepAliveTsk struct {
 	Receiver PeerID
 }
 
+type PeerCalculateStatsTsk struct {
+	Receiver PeerID
+}
+
 type PeerTryConnectionTsk struct {
 	Peer *Peer
 }
-
-func (tsk PeerKeepAliveTsk) IsTask()     {}
-func (tsk PeerTryConnectionTsk) IsTask() {}
-
-//
-// TRACKER TASKS
-//
 
 type TrackerNextAnnounceTsk struct {
 	Tracker *Tracker
 	Event   TrackerEventType
 }
 
+type ChokerTsk struct{}
+type OptimisticUnchokeTsk struct{}
+
+func (tsk PeerKeepAliveTsk) IsTask()      {}
+func (tsk PeerTryConnectionTsk) IsTask()  {}
+func (tsk PeerCalculateStatsTsk) IsTask() {}
+
 func (tsk TrackerNextAnnounceTsk) IsTask() {}
+
+func (tsk ChokerTsk) IsTask()            {}
+func (tsk OptimisticUnchokeTsk) IsTask() {}

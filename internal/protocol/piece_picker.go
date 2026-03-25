@@ -1,77 +1,89 @@
 package protocol
 
 import (
-	"GoBit/internal/utils"
+	"fmt"
+	"slices"
+
+	"github.com/bits-and-blooms/bitset"
 )
 
 type blockState uint8
+
+const (
+	BLOCK_REQUESTED blockState = iota
+	BLOCK_RECEIVED
+)
+
 type pieceState uint8
+
+const (
+	PIECE_DONT_HAVE pieceState = iota
+	PIECE_DOWNLOADING
+	PIECE_HAVE
+)
+
 type piecePriority uint8
 
 const (
-	REQUESTED blockState = iota
-	RECEIVED
-)
-
-const (
-	LOW piecePriority = iota
-	NORMAL
-	HIGH
-)
-
-const (
-	DONT_HAVE pieceState = iota
-	DOWNLOADING
-	HAVE
+	PIECE_PRIORITY_LOW piecePriority = iota
+	PIECE_PRIORITY_NORMAL
+	PIECE_PRIORITY_HIGH
 )
 
 type blockInfo struct {
-	begin uint64
+	idx   uint32
 	state blockState
 }
 
 type pieceInfo struct {
-	blocks []blockInfo
+	blocks []*blockInfo
 
+	idx          uint32
 	availability uint8
 	priority     piecePriority
 	state        pieceState
 }
 
 type PiecePicker struct {
-	pieces     []pieceInfo
-	pieceCount uint32
+	torrent *Torrent
+
+	pieces     []*pieceInfo
+	pieceCount uint
+
+	bitfield bitset.BitSet
 }
 
 func NewPiecePicker(t *Torrent) *PiecePicker {
 	p := PiecePicker{}
-	p.pieceCount = uint32(len(t.Info.Pieces) / 20)
-	p.pieces = make([]pieceInfo, p.pieceCount)
+	p.pieceCount = uint(len(t.Info.Pieces) / 20)
+	p.pieces = make([]*pieceInfo, p.pieceCount)
+	p.bitfield = *bitset.New(p.pieceCount)
+	p.torrent = t
 
-	for _, piece := range p.pieces {
-		piece.availability = 0
-		piece.priority = NORMAL
-		piece.state = DONT_HAVE
-
-		piece.blocks = nil
+	for i, _ := range p.pieces {
+		p.pieces[i] = &pieceInfo{
+			nil,
+			uint32(i),
+			0,
+			PIECE_PRIORITY_NORMAL,
+			PIECE_DONT_HAVE,
+		}
 	}
 
 	return &p
 }
 
-func (p *PiecePicker) PickPiece(peer ActivePeerState) (pieceInfo, bool) {
-	if peer.IsChoked {
-		return pieceInfo{}, false
-	}
-	interestingPiece := pieceInfo{}
-	availablePieces := []pieceInfo{}
+func (p *PiecePicker) PickPiece(peer ActivePeerState) uint32 {
+	availablePieces := []*pieceInfo{}
 
-	for i := range p.pieceCount {
-		if peer.Pieces.IsSet(i) {
+	for i := range peer.Pieces.EachSet() {
+		if p.pieces[i].state != PIECE_HAVE &&
+			len(p.pieces[i].blocks) < 512 {
 			availablePieces = append(availablePieces, p.pieces[i])
 		}
 	}
-	interestingPiece = availablePieces[0]
+
+	interestingPiece := availablePieces[0]
 	for _, piece := range availablePieces {
 		if piece.priority > interestingPiece.priority {
 			interestingPiece = piece
@@ -80,23 +92,83 @@ func (p *PiecePicker) PickPiece(peer ActivePeerState) (pieceInfo, bool) {
 		}
 	}
 
-	return interestingPiece, true
+	return interestingPiece.idx
 }
 
-func (p *PiecePicker) GetBitfield() *utils.Bitfield {
-	bf := utils.NewBitfield(p.pieceCount)
-	for i, piece := range p.pieces {
-		if piece.state == HAVE {
-			bf.Set(uint32(i), true)
+func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) uint32 {
+	piece := p.pieces[pieceIdx]
+	slices.SortFunc(piece.blocks, func(a, b *blockInfo) int {
+		if a.idx < b.idx {
+			return -1
+		} else if a.idx > b.idx {
+			return 1
 		} else {
-			bf.Set(uint32(i), false)
+			return 0
+		}
+	})
+
+	for i := uint32(0); i < uint32(len(piece.blocks)); i++ {
+		if i != piece.blocks[i].idx {
+			return i
 		}
 	}
-	return bf
+
+	if len(piece.blocks) > 512 {
+		panic("")
+	}
+
+	return uint32(len(piece.blocks))
 }
 
-func (p *PiecePicker) Piority(idx uint32) piecePriority {
-	return p.pieces[idx].priority
+func (p *PiecePicker) setBlockState(pieceIdx uint32, blockIdx uint32, state blockState) {
+	piece := p.pieces[pieceIdx]
+	for _, b := range piece.blocks {
+		if b.idx == blockIdx {
+			b.state = state
+			return
+		}
+	}
+	piece.blocks = append(piece.blocks, &blockInfo{
+		blockIdx, state,
+	})
+}
+
+func (p *PiecePicker) setPieceState(pieceIdx uint32, state pieceState) {
+	p.pieces[pieceIdx].state = state
+}
+
+func (p *PiecePicker) removeBlock(pieceIdx uint32, blockIdx uint32) {
+	piece := p.pieces[pieceIdx]
+	for i, block := range piece.blocks {
+		if block.idx == blockIdx {
+			piece.blocks = append(piece.blocks[:i], piece.blocks[i+1:]...)
+			return
+		}
+	}
+	panic(fmt.Errorf("non existing block removed (%v:%v)", pieceIdx, blockIdx))
+}
+
+func (p *PiecePicker) isPieceComplete(pieceIdx uint32) bool {
+	piece := p.pieces[pieceIdx]
+	receivedBlocks := []*blockInfo{}
+
+	for _, block := range piece.blocks {
+		if block.state == BLOCK_RECEIVED {
+			receivedBlocks = append(receivedBlocks, block)
+		}
+	}
+
+	return uint32(len(receivedBlocks))*p.torrent.Info.BlockLength == p.torrent.Info.PieceLength
+}
+
+func (p *PiecePicker) calculateInterested(peer ActivePeerState) bool {
+	for i := range peer.Pieces.EachSet() {
+		if p.pieces[i].state == PIECE_DONT_HAVE {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (p *PiecePicker) SetPriority(idx uint32, prio piecePriority) {
@@ -111,35 +183,28 @@ func (p *PiecePicker) DecRef(idx uint32) {
 	p.pieces[idx].availability--
 }
 
-func (p *PiecePicker) IncRefBitfield(bf *utils.Bitfield) bool {
-	if p.pieceCount != bf.Count() {
-		return false
+func (p *PiecePicker) IncRefBitfield(bf *bitset.BitSet) {
+	if p.pieceCount != bf.Len() {
+		panic("")
 	}
-	for i := range p.pieceCount {
-		if bf.IsSet(i) {
-			p.pieces[i].availability++
-		}
+	for i := range bf.EachSet() {
+		p.pieces[i].availability++
 	}
-	return true
 }
 
-func (p *PiecePicker) DecRefBitfield(bf *utils.Bitfield) bool {
-	if p.pieceCount != bf.Count() {
-		return false
+func (p *PiecePicker) DecRefBitfield(bf *bitset.BitSet) {
+	if p.pieceCount != bf.Len() {
+		panic("")
 	}
-	for i := range p.pieceCount {
-		if bf.IsSet(i) {
-			p.pieces[i].availability--
-		}
+	for i := range bf.EachSet() {
+		p.pieces[i].availability--
 	}
-	return true
 }
 
-func (p *PiecePicker) calculateInterested(peer ActivePeerState) bool {
-	for i, piece := range p.pieces {
-		if piece.state == DONT_HAVE && peer.Pieces.IsSet(uint32(i)) {
-			return true
-		}
-	}
-	return false
+func (p *PiecePicker) GetBitfield() bitset.BitSet {
+	return p.bitfield
+}
+
+func (p *PiecePicker) Piority(idx uint32) piecePriority {
+	return p.pieces[idx].priority
 }

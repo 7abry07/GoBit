@@ -2,11 +2,11 @@ package main
 
 import (
 	"GoBit/internal/protocol"
-	// "time"
+	"time"
 )
 
 func main() {
-	name := "naruto"
+	name := "one_piece"
 	file := protocol.TorrentFile{}
 
 	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/" + name + ".torrent")
@@ -20,9 +20,8 @@ func main() {
 	ses.Start()
 	ses.AddTorrent(torr)
 
-	// time.Sleep(15 * time.Second)
-	// fmt.Println("EXPIRED")
-	// ses.StopTorrent(torr)
+	time.Sleep(30 * time.Second)
+	ses.StopTorrent(torr)
 
 	for {
 	}

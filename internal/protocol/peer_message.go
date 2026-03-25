@@ -160,7 +160,7 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 		}
 	case Request:
 		{
-			if len(m.Payload) != 13 {
+			if len(m.Payload) != 12 {
 				return []byte{}, Peer_bad_message_err
 			}
 			idx := binary.LittleEndian.Uint32(m.Payload[:4])
@@ -173,14 +173,14 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 		}
 	case Piece:
 		{
-			if len(m.Payload) < 9 {
+			if len(m.Payload) < 8 {
 				return []byte{}, Peer_bad_message_err
 			}
 			idx := binary.LittleEndian.Uint32(m.Payload[:4])
 			begin := binary.LittleEndian.Uint32(m.Payload[4:8])
 			block := m.Payload[8:]
 
-			if len(block)+9 != len(m.Payload) {
+			if len(block)+8 != len(m.Payload) {
 				return []byte{}, Peer_bad_message_err
 			}
 
@@ -190,7 +190,7 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 		}
 	case Cancel:
 		{
-			if len(m.Payload) != 13 {
+			if len(m.Payload) != 12 {
 				return []byte{}, Peer_bad_message_err
 			}
 			idx := binary.LittleEndian.Uint32(m.Payload[:4])

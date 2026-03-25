@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"container/heap"
+	// "fmt"
+	"context"
 	"time"
 )
 
@@ -47,18 +49,23 @@ func (pq *taskPQueue) Pop() any {
 // ----------------------------
 
 type Scheduler struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	taskTimer *time.Timer
 	tasks     taskPQueue
 	taskChan  chan scheduledTask
-	signalTo  chan Task
+	torrent   *Torrent
 	ready     []Task
 }
 
-func NewScheduler(signalTo chan Task) *Scheduler {
+func NewScheduler(torrent *Torrent) *Scheduler {
 	s := Scheduler{}
+	s.ctx, s.cancel = context.WithCancel(torrent.ctx)
+
 	s.taskTimer = time.NewTimer(0)
 	s.taskChan = make(chan scheduledTask, 100)
-	s.signalTo = signalTo
+	s.torrent = torrent
 	<-s.taskTimer.C
 	heap.Init(&s.tasks)
 
@@ -67,17 +74,24 @@ func NewScheduler(signalTo chan Task) *Scheduler {
 }
 
 func (s *Scheduler) Schedule(t Task, signalAt time.Time) {
+	if s.ctx.Err() != nil {
+		return
+	}
 	s.taskChan <- scheduledTask{signalAt, t, 0}
 }
 
 func (s *Scheduler) loop() {
 	for {
+		select {
+		case <-s.ctx.Done():
+			s.taskTimer.Stop()
+			return
+		default:
+		}
+
 		if len(s.ready) > 0 {
-			select {
-			case s.signalTo <- s.ready[0]:
-				s.ready = s.ready[1:]
-			default:
-			}
+			s.torrent.SignalTask(s.ready[0])
+			s.ready = s.ready[1:]
 		}
 
 		select {
@@ -92,7 +106,9 @@ func (s *Scheduler) loop() {
 				original := s.tasks[0]
 				heap.Push(&s.tasks, &newTask)
 				if original != s.tasks[0] {
-					s.taskTimer.Reset(time.Until(newTask.signalAt))
+					if s.taskTimer.Stop() {
+						s.taskTimer.Reset(time.Until(newTask.signalAt))
+					}
 				}
 			}
 		case <-s.taskTimer.C:
@@ -107,7 +123,3 @@ func (s *Scheduler) loop() {
 		}
 	}
 }
-
-// func (s *Scheduler) emitter() {
-//
-// }

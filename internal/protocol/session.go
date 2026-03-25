@@ -109,17 +109,8 @@ func (s *Session) handshakePeer(conn net.Conn) {
 	peer.Conn = c
 	c.Peer = peer
 
-	addedEv := PeerAddedEv{
-		Sender: peer,
-	}
-	connectedEv := PeerConnectedEv{
-		Sender:   c,
-		Attempts: 0,
-	}
-	t.SignalEvent(addedEv)
-	t.SignalEvent(connectedEv)
-	// t.AddPeer(peer)
-	// t.AddActiveConnection(c)
+	t.SignalEvent(PeerAddedEv{peer})
+	t.SignalEvent(PeerConnectedEv{c, 0})
 }
 
 func (s *Session) Start() {
