@@ -37,15 +37,15 @@ func NewTracker(announce url.URL) (*Tracker, error) {
 	return &t, nil
 }
 
-func (t *Tracker) SendAnnounce(event TrackerEventType, torrent *Torrent, clientPid PeerID, port uint16) (TrackerResponse, error) {
+func (t *Tracker) SendAnnounce(ih [20]byte, d, u, l int64, event TrackerEventType, clientPid PeerID, port uint16) (TrackerResponse, error) {
 	req := TrackerRequest{}
 	req.Compact = 1
-	req.Downloaded = torrent.Download
-	req.Uploaded = torrent.Upload
+	req.Downloaded = d
+	req.Uploaded = u
 	req.Event = event
-	req.Infohash = torrent.Info.InfoHash
+	req.Infohash = ih
 	req.Kind = TrackerAnnounce
-	req.Left = torrent.Left
+	req.Left = l
 	req.NoPID = 1
 	req.Numwant = 200
 	req.PeerID = clientPid

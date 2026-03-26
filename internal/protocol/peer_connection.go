@@ -214,8 +214,8 @@ func (p *PeerConnection) KeepAlive() {
 func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
 	mess := peerMessage{}
 	mess.Kind = Piece
-	binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	binary.LittleEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
 	mess.Payload = append(mess.Payload, block...)
 	go p.send(mess)
 }
@@ -223,7 +223,7 @@ func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
 func (p *PeerConnection) SendHave(idx uint32) {
 	mess := peerMessage{}
 	mess.Kind = Have
-	binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
 	go p.send(mess)
 }
 

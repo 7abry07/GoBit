@@ -18,7 +18,7 @@ type Session struct {
 
 	listener net.Listener
 
-	PeerID   [20]byte
+	PeerID   PeerID
 	Port     uint16
 	Torrents map[[20]byte]*Torrent
 }

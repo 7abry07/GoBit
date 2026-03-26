@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"crypto/sha1"
 	"fmt"
 	"slices"
 
@@ -19,6 +20,7 @@ type pieceState uint8
 const (
 	PIECE_DONT_HAVE pieceState = iota
 	PIECE_DOWNLOADING
+	PIECE_COMPLETE
 	PIECE_HAVE
 )
 
@@ -33,6 +35,7 @@ const (
 type blockInfo struct {
 	idx   uint32
 	state blockState
+	data  []byte
 }
 
 type pieceInfo struct {
@@ -49,15 +52,12 @@ type PiecePicker struct {
 
 	pieces     []*pieceInfo
 	pieceCount uint
-
-	bitfield bitset.BitSet
 }
 
 func NewPiecePicker(t *Torrent) *PiecePicker {
 	p := PiecePicker{}
 	p.pieceCount = uint(len(t.Info.Pieces) / 20)
 	p.pieces = make([]*pieceInfo, p.pieceCount)
-	p.bitfield = *bitset.New(p.pieceCount)
 	p.torrent = t
 
 	for i, _ := range p.pieces {
@@ -129,8 +129,51 @@ func (p *PiecePicker) setBlockState(pieceIdx uint32, blockIdx uint32, state bloc
 		}
 	}
 	piece.blocks = append(piece.blocks, &blockInfo{
-		blockIdx, state,
+		blockIdx, state, nil,
 	})
+}
+
+func (p *PiecePicker) setBlockData(pieceIdx uint32, blockIdx uint32, data []byte) {
+	piece := p.pieces[pieceIdx]
+	for _, b := range piece.blocks {
+		if b.idx == blockIdx {
+			b.data = data
+			return
+		}
+	}
+	panic("setting data to non existing block")
+}
+
+func (p *PiecePicker) getPieceHash(pieceIdx uint32) []byte {
+	pieceData := []byte{}
+	piece := p.pieces[pieceIdx]
+	if piece.state != PIECE_COMPLETE {
+		panic("tried to compute hash of non complete piece")
+	}
+
+	slices.SortFunc(piece.blocks, func(a, b *blockInfo) int {
+		if a.idx < b.idx {
+			return -1
+		} else if a.idx > b.idx {
+			return 1
+		} else {
+			panic("")
+		}
+	})
+
+	for _, block := range piece.blocks {
+		pieceData = append(pieceData, block.data...)
+	}
+
+	hasher := sha1.New()
+	hasher.Write(pieceData)
+	return hasher.Sum([]byte{})
+}
+
+func (p *PiecePicker) resetPiece(pieceIdx uint32) {
+	piece := p.pieces[pieceIdx]
+	piece.state = PIECE_DONT_HAVE
+	piece.blocks = nil
 }
 
 func (p *PiecePicker) setPieceState(pieceIdx uint32, state pieceState) {
@@ -199,10 +242,6 @@ func (p *PiecePicker) DecRefBitfield(bf *bitset.BitSet) {
 	for i := range bf.EachSet() {
 		p.pieces[i].availability--
 	}
-}
-
-func (p *PiecePicker) GetBitfield() bitset.BitSet {
-	return p.bitfield
 }
 
 func (p *PiecePicker) Piority(idx uint32) piecePriority {

@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/bits-and-blooms/bitset"
@@ -26,9 +27,10 @@ type Torrent struct {
 	events chan Event
 	tasks  chan Task
 
-	Download int64
-	Upload   int64
-	Left     int64
+	bitfield   bitset.BitSet
+	Downloaded int64
+	Uploaded   int64
+	Left       int64
 
 	Ses    *Session
 	Sched  *Scheduler
@@ -49,8 +51,9 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.events = make(chan Event, 1024)
 	torrent.tasks = make(chan Task, 1024)
 
-	torrent.Download = 0
-	torrent.Upload = 0
+	torrent.bitfield = *bitset.New(uint(len(file.Pieces) / 20))
+	torrent.Downloaded = 0
+	torrent.Uploaded = 0
 	torrent.Left = int64(len(file.Pieces) / 20)
 	torrent.Picker = NewPiecePicker(&torrent)
 	torrent.Sched = NewScheduler(&torrent)
@@ -123,6 +126,8 @@ func (t *Torrent) handleEvent(event Event) {
 		t.handlePeerPieceEvent(e)
 	case PeerCancelEv:
 		t.handlePeerCancelEvent(e)
+	case PieceCompletedEv:
+		t.handlePieceCompletedEvent(e)
 	case TrackerAddedEv:
 		t.handleTrackerAddedEvent(e)
 	case TrackerRemovedEv:
@@ -135,7 +140,7 @@ func (t *Torrent) handlePeerKeepAliveTask(tsk PeerKeepAliveTsk) {
 	if !ok {
 		return
 	}
-	peer.Conn.KeepAlive()
+	go peer.Conn.KeepAlive()
 	// fmt.Printf("KEEP ALIVE SENT -> %v\n", tsk.Receiver)
 	t.Sched.Schedule(
 		PeerKeepAliveTsk{tsk.Receiver},
@@ -185,8 +190,21 @@ func (t *Torrent) handlePeerCalculateStatsTask(tsk PeerCalculateStatsTsk) {
 }
 
 func (t *Torrent) handleTrackerNextAnnounceTask(tsk TrackerNextAnnounceTsk) {
+	ih := t.Info.InfoHash
+	d := t.Downloaded
+	u := t.Uploaded
+	l := t.Left
+
 	go func() {
-		res, err := tsk.Tracker.SendAnnounce(tsk.Event, t, t.Ses.PeerID, t.Ses.Port)
+		res, err := tsk.Tracker.SendAnnounce(
+			ih,
+			d,
+			u,
+			l,
+			tsk.Event,
+			t.Ses.PeerID,
+			t.Ses.Port)
+
 		if tsk.Event == TrackerStopped {
 			return
 		}
@@ -317,7 +335,7 @@ func (t *Torrent) handlePeerConnectedEvent(e PeerConnectedEv) {
 
 	fmt.Printf("CONNECTED (attempts: %v) -> %v\n", e.Attempts, e.Sender.Pid.String())
 
-	e.Sender.SendBitfield(t.Picker.GetBitfield())
+	e.Sender.SendBitfield(t.bitfield)
 
 	t.Sched.Schedule(
 		PeerKeepAliveTsk{e.Sender.Pid},
@@ -352,7 +370,7 @@ func (t *Torrent) handlePeerChokeEvent(e PeerChokeEv) {
 	peer.State.AmChoked = e.Value
 
 	if !e.Value {
-		for len(peer.State.PendingRequests) < 5 {
+		for len(peer.State.PendingRequests) < 10 {
 			pieceIdx := t.Picker.PickPiece(*peer.State)
 			blockIdx := t.Picker.getLowestFreeBlock(pieceIdx)
 			t.Picker.setBlockState(pieceIdx, blockIdx, BLOCK_REQUESTED)
@@ -410,7 +428,7 @@ func (t *Torrent) handlePeerBitfieldEvent(e PeerBitfieldEv) {
 }
 
 func (t *Torrent) handlePeerRequestEvent(e PeerRequestEv) {
-	// TODO
+	fmt.Printf("REQUEST -> [%v]\n", e.Sender)
 }
 
 func (t *Torrent) handlePeerPieceEvent(e PeerPieceEv) {
@@ -421,19 +439,22 @@ func (t *Torrent) handlePeerPieceEvent(e PeerPieceEv) {
 	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin/t.Info.BlockLength, e.Sender)
 	for i, req := range peer.State.PendingRequests {
 		if req.Begin == e.Begin {
-			peer.State.PendingRequests = append(peer.State.PendingRequests[:i], peer.State.PendingRequests[i+1:]...)
 			peer.State.TotalUploaded += len(e.Block)
+			peer.State.PendingRequests = append(peer.State.PendingRequests[:i], peer.State.PendingRequests[i+1:]...)
 			t.Picker.setBlockState(e.Idx, e.Begin/t.Info.BlockLength, BLOCK_RECEIVED)
+			t.Picker.setBlockData(e.Idx, e.Begin/t.Info.BlockLength, e.Block)
+
 			if t.Picker.isPieceComplete(e.Idx) {
 				fmt.Printf("PIECE COMPLETED -> [%v]\n", e.Idx)
-				t.Picker.setPieceState(e.Idx, PIECE_HAVE)
+				t.Picker.setPieceState(e.Idx, PIECE_COMPLETE)
+				t.SignalEvent(PieceCompletedEv{e.Idx})
 			}
 
 			newPieceIdx := t.Picker.PickPiece(*peer.State)
 			newBlockIdx := t.Picker.getLowestFreeBlock(newPieceIdx)
-
 			t.Picker.setBlockState(newPieceIdx, newBlockIdx, BLOCK_REQUESTED)
 			t.Picker.setPieceState(newPieceIdx, PIECE_DOWNLOADING)
+
 			newReq := PeerRequest{
 				Idx:    newPieceIdx,
 				Begin:  newBlockIdx * t.Info.BlockLength,
@@ -450,6 +471,26 @@ func (t *Torrent) handlePeerPieceEvent(e PeerPieceEv) {
 
 func (t *Torrent) handlePeerCancelEvent(e PeerCancelEv) {
 	// TODO
+}
+
+func (t *Torrent) handlePieceCompletedEvent(e PieceCompletedEv) {
+	pieceHash := t.Picker.getPieceHash(e.Idx)
+	actualPiecehash := t.Info.Pieces[e.Idx*20 : (e.Idx*20)+20]
+	if slices.Compare(pieceHash, actualPiecehash) != 0 {
+		t.Picker.resetPiece(e.Idx)
+		fmt.Printf("HASH CHECK FAILED -> [%v]\n", e.Idx)
+		return
+	}
+
+	t.Picker.setPieceState(e.Idx, PIECE_HAVE)
+	t.bitfield.Set(uint(e.Idx))
+	t.Downloaded++
+	t.Left--
+	go func() {
+		for _, peer := range t.ActivePeers {
+			go peer.Conn.SendHave(e.Idx)
+		}
+	}()
 }
 
 func (t *Torrent) handleTrackerAddedEvent(e TrackerAddedEv) {

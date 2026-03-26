@@ -72,6 +72,10 @@ type PeerCancelEv struct {
 	Length uint32
 }
 
+type PieceCompletedEv struct {
+	Idx uint32
+}
+
 func (ev PeerConnectedEv) IsEvent()    {}
 func (ev PeerDisconnectedEv) IsEvent() {}
 func (ev PeerRemovedEv) IsEvent()      {}
@@ -83,6 +87,7 @@ func (ev PeerBitfieldEv) IsEvent()     {}
 func (ev PeerRequestEv) IsEvent()      {}
 func (ev PeerPieceEv) IsEvent()        {}
 func (ev PeerCancelEv) IsEvent()       {}
+func (ev PieceCompletedEv) IsEvent()   {}
 
 //
 // TRACKER EVENTS
