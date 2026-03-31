@@ -20,7 +20,7 @@ type PeerTryConnectionTsk struct {
 	Peer *Peer
 }
 
-type TrackerNextAnnounceTsk struct {
+type TrackerTryAnnounceTsk struct {
 	Tracker *Tracker
 	Event   TrackerEventType
 }
@@ -32,7 +32,7 @@ func (tsk PeerKeepAliveTsk) IsTask()      {}
 func (tsk PeerTryConnectionTsk) IsTask()  {}
 func (tsk PeerCalculateStatsTsk) IsTask() {}
 
-func (tsk TrackerNextAnnounceTsk) IsTask() {}
+func (tsk TrackerTryAnnounceTsk) IsTask() {}
 
 func (tsk ChokerTsk) IsTask()            {}
 func (tsk OptimisticUnchokeTsk) IsTask() {}

@@ -22,20 +22,20 @@ type fileinfo struct {
 }
 
 type TorrentFile struct {
-	Announce    *url.URL
-	Name        string
-	Pieces      []byte
-	InfoHash    [20]byte
-	PieceLength uint32
-	BlockLength uint32
-	Private     bool
+	Announce  *url.URL
+	Name      string
+	Pieces    []byte
+	InfoHash  [20]byte
+	PieceSize uint32
+	BlockSize uint32
+	Private   bool
 
-	AnnounceList *[][]url.URL
+	AnnounceList [][]url.URL
 	Comment      *string
 	CreatedBy    *string
 	Encoding     *string
 	CreationDate *time.Time
-	Files        *[]fileinfo
+	Files        []fileinfo
 	Length       *uint64
 }
 
@@ -116,12 +116,12 @@ func parse(input string) (TorrentFile, error) {
 	f.Announce = announce
 	f.Name = string(name)
 	f.Pieces = []byte(pieces)
-	f.PieceLength = uint32(pieceLen)
-	f.BlockLength = 16 * 1024
+	f.PieceSize = uint32(pieceLen)
+	f.BlockSize = 16 * 1024
 	f.Name = string(name)
 
 	if announcelistOk {
-		f.AnnounceList = &announce_list
+		f.AnnounceList = announce_list
 	}
 	if commentOk {
 		str := string(comment)
@@ -145,7 +145,7 @@ func parse(input string) (TorrentFile, error) {
 		val := uint64(length)
 		f.Length = &val
 	} else {
-		f.Files = &files
+		f.Files = files
 	}
 	if privateOk {
 		switch private {
@@ -219,12 +219,17 @@ func parseFilesItem(fileval bencode.BDict) (fileinfo, bool) {
 	}
 
 	var path strings.Builder
-	for _, frag := range pathlst {
+	for i, frag := range pathlst {
 		strval, ok := frag.Str()
 		if !ok {
 			return fileinfo{}, false
 		}
-		path.WriteString(string(strval))
+
+		if i == len(pathlst)-1 {
+			path.WriteString(string(strval))
+		} else {
+			path.WriteString(string(strval) + "/")
+		}
 	}
 
 	return fileinfo{Path: path.String(), Length: uint64(length)}, true

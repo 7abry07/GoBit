@@ -30,4 +30,5 @@ var (
 	Peer_id_mismatch_err        = errors.New("the peer id of the handshake doesn't match the one received from the tracker")
 	Peer_unrecognized_mess_err  = errors.New("the message of the peer is of an unrecognized type")
 	Peer_double_bitfield        = errors.New("double bitfield received")
+	Peer_request_too_large      = errors.New("the length of the peer request is larger than allowed (16 kilobyte)")
 )

@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"github.com/bits-and-blooms/bitset"
 	"math/rand"
 	"net"
+
+	"github.com/bits-and-blooms/bitset"
 )
 
 func WriteFull(conn net.Conn, content []byte) error {
@@ -32,17 +33,19 @@ func GenerateRandomPeerId() [20]byte {
 	return [20]byte(pid)
 }
 
-func BitSetToBytes(b *bitset.BitSet, bits uint) []byte {
-	byteLen := (bits + 7) / 8
+func BitSetToBytes(b bitset.BitSet) []byte {
+	byteLen := (b.Len() + 7) / 8
 	out := make([]byte, byteLen)
 
-	for i := range bits {
+	for i := range b.Len() {
 		if b.Test(i) {
 			byteIndex := i / 8
 			bitIndex := 7 - (i % 8)
 			out[byteIndex] |= 1 << bitIndex
 		}
 	}
+
+	// fmt.Printf("bytes before -> %v\nbytes after -> %v\n", len(b.Words())*8, len(out))
 
 	return out
 }

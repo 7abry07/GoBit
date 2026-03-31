@@ -231,11 +231,12 @@ func (p *PeerConnection) SendBitfield(bf bitset.BitSet) {
 	mess := peerMessage{}
 	mess.Kind = Bitfield
 
-	words := bf.Words()
-	raw := make([]byte, 8*len(words))
-	for i, w := range words {
-		binary.LittleEndian.PutUint64(raw[i*8:], w)
-	}
+	raw := utils.BitSetToBytes(bf)
+	// words := bf.Words()
+	// raw := make([]byte, 8*len(words))
+	// for i, w := range words {
+	// 	binary.LittleEndian.PutUint64(raw[i*8:], w)
+	// }
 	mess.Payload = raw
 	go p.send(mess)
 }
@@ -411,7 +412,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 		}
 		p.bitfieldSent = true
 
-		bf := utils.BytesToBitSet(mess.Payload, p.torrent.Picker.pieceCount)
+		bf := utils.BytesToBitSet(mess.Payload, uint(p.torrent.Picker.pieceCount))
 
 		bfEv := PeerBitfieldEv{
 			Sender:   p.Pid,
@@ -429,6 +430,10 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
 		length := binary.LittleEndian.Uint32(mess.Payload[8:])
 
+		if length > 16*1024 {
+			p.cancel(Peer_request_too_large)
+		}
+
 		reqEv := PeerRequestEv{
 			Sender: p.Pid,
 			Idx:    idx,
@@ -438,7 +443,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 
 		p.torrent.SignalEvent(reqEv)
 	case Piece:
-		if uint32(len(mess.Payload)) != 8+p.torrent.Info.BlockLength {
+		if uint32(len(mess.Payload)) != 8+p.torrent.Info.BlockSize {
 			p.cancel(fmt.Errorf("%v (piece)", Peer_bad_message_err))
 			return
 		}

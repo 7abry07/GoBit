@@ -59,23 +59,23 @@ func TestValidTorrent(t *testing.T) {
 		t.Errorf("'info hash' expected: [%v], | got: [%x]", "de2fee7cd8f32514dc138b4cdd53c93d7d7a1eb6", file.InfoHash)
 	}
 
-	if len(*file.Files) != 500 {
-		t.Errorf("'files' expected: [%v], | got: [%v]", "length == 500", fmt.Sprintf("length == %v", len(*file.Files)))
+	if len(file.Files) != 500 {
+		t.Errorf("'files' expected: [%v], | got: [%v]", "length == 500", fmt.Sprintf("length == %v", len(file.Files)))
 	}
 
-	if (*file.Files)[0].Path != "[Sotark] Naruto Shippuden - 175 [720p][HEVC][x265][Dual-Audio].mkv" {
-		t.Errorf("'files' expected: [%v]Path[%v], | got: [%v]", 0, "[Sotark] Naruto Shippuden - 175 [720p][HEVC][x265][Dual-Audio].mkv", (*file.Files)[0].Path)
+	if (file.Files)[0].Path != "[Sotark] Naruto Shippuden - 175 [720p][HEVC][x265][Dual-Audio].mkv" {
+		t.Errorf("'files' expected: [%v]Path[%v], | got: [%v]", 0, "[Sotark] Naruto Shippuden - 175 [720p][HEVC][x265][Dual-Audio].mkv", (file.Files)[0].Path)
 	}
 
-	if (*file.Files)[0].Length != 288245151 {
-		t.Errorf("'files' expected: [%v]Length[%v], | got: [%v]", 0, 288245151, (*file.Files)[0].Length)
+	if (file.Files)[0].Length != 288245151 {
+		t.Errorf("'files' expected: [%v]Length[%v], | got: [%v]", 0, 288245151, (file.Files)[0].Length)
 	}
 
-	if len(*file.AnnounceList) != 5 {
-		t.Errorf("'announce list' expected: [%v], | got: [%v]", 1, len(*file.AnnounceList))
+	if len(file.AnnounceList) != 5 {
+		t.Errorf("'announce list' expected: [%v], | got: [%v]", 1, len(file.AnnounceList))
 	}
 
-	if (*file.AnnounceList)[0][0].String() != "http://nyaa.tracker.wf:7777/announce" {
-		t.Errorf("'announce list' expected: [%v][%v], | got: [%v]", 0, "http://nyaa.tracker.wf:7777/announce", (*file.AnnounceList)[0][0].String())
+	if (file.AnnounceList)[0][0].String() != "http://nyaa.tracker.wf:7777/announce" {
+		t.Errorf("'announce list' expected: [%v][%v], | got: [%v]", 0, "http://nyaa.tracker.wf:7777/announce", (file.AnnounceList)[0][0].String())
 	}
 }

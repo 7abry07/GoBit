@@ -13,7 +13,7 @@ func TestHttpAnnounceRequest(t *testing.T) {
 
 	req.Downloaded = 1
 	req.Uploaded = 1
-	req.Event = protocol.TrackerNone
+	req.Event = protocol.TRACKER_NONE
 	req.Infohash =
 		[20]byte{
 			0xde, 0x2f, 0xee, 0x7c, 0xd8,

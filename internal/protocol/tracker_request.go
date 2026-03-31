@@ -11,10 +11,10 @@ type TrackerEventType int
 type TrackerRequestKind int
 
 const (
-	TrackerNone TrackerEventType = iota
-	TrackerCompleted
-	TrackerStarted
-	TrackerStopped
+	TRACKER_NONE TrackerEventType = iota
+	TRACKER_COMPLETED
+	TRACKER_STARTED
+	TRACKER_STOPPED
 )
 
 const (
@@ -53,7 +53,7 @@ func (req TrackerRequest) SerializeHttp(t Tracker) url.URL {
 				"&compact=%v"+
 				"&no_peer_id=%v"+
 				"&event=%v"+
-				"numwant=%v"+
+				"&numwant=%v"+
 				"&ip=%v"+
 				"&key=%v"+
 				"&trackerid=%v",

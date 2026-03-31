@@ -2,17 +2,11 @@ package main
 
 import (
 	"GoBit/internal/protocol"
-	// "time"
-	"net/http"
-	_ "net/http/pprof"
+	"time"
 )
 
 func main() {
-	go func() {
-		http.ListenAndServe("localhost:6060", nil)
-	}()
-
-	name := "one_piece"
+	name := "debian"
 	file := protocol.TorrentFile{}
 
 	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/" + name + ".torrent")
@@ -23,13 +17,11 @@ func main() {
 	ses := protocol.NewSession()
 	torr := protocol.NewTorrent(file, ses)
 
-	ses.Start()
 	ses.AddTorrent(torr)
+	ses.Start()
 
 	// time.Sleep(30 * time.Second)
 	// ses.StopTorrent(torr)
 
-	for {
-	}
-
+	time.Sleep(time.Hour * 10)
 }
