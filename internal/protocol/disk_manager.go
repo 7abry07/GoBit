@@ -22,7 +22,8 @@ type DiskManager struct {
 
 	torrent *Torrent
 
-	RootName string
+	RootName          string
+	DownloadDirectory string
 
 	PieceCount    uint32
 	PieceSize     uint32
@@ -74,23 +75,20 @@ func (dm *DiskManager) loop() {
 }
 
 func (dm *DiskManager) startJob(j DiskJob) {
-	switch j.(type) {
+	switch j := j.(type) {
 	case DiskWriteJob:
 		{
 			// fmt.Println("DISK WRITE JOB STARTED")
-			j := j.(DiskWriteJob)
 			go dm.writeBlock(j.PieceIdx, j.BlockIdx, j.Data)
 		}
 	case DiskReadJob:
 		{
 			// fmt.Println("DISK READ JOB STARTED")
-			j := j.(DiskReadJob)
 			go dm.readBlock(j.RequestedFrom, j.PieceIdx, j.BlockIdx, j.Length)
 		}
 	case DiskHashJob:
 		{
 			// fmt.Println("DISK HASH JOB STARTED")
-			j := j.(DiskHashJob)
 			go dm.verifyHash(j.PieceIdx)
 		}
 	}
@@ -113,10 +111,10 @@ func (dm *DiskManager) writeBlock(pieceIdx, blockIdx uint32, data []byte) {
 			blockOffset := overlapStart - dataStart
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.RootName, entry.Path)
+			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 			if err != nil {
-				dm.torrent.SignalEvent(DiskWriteFailedEv{
+				dm.torrent.SignalEvent(DiskWriteFailed{
 					pieceIdx, blockIdx, err,
 				})
 				return
@@ -125,7 +123,7 @@ func (dm *DiskManager) writeBlock(pieceIdx, blockIdx uint32, data []byte) {
 			file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE, 0644)
 			defer file.Close()
 			if err != nil {
-				dm.torrent.SignalEvent(DiskWriteFailedEv{
+				dm.torrent.SignalEvent(DiskWriteFailed{
 					pieceIdx, blockIdx, err,
 				})
 				return
@@ -133,15 +131,15 @@ func (dm *DiskManager) writeBlock(pieceIdx, blockIdx uint32, data []byte) {
 
 			_, err = file.WriteAt(data[blockOffset:blockOffset+length], int64(fileOffset))
 			if err != nil {
-				dm.torrent.SignalEvent(DiskWriteFailedEv{
+				dm.torrent.SignalEvent(DiskWriteFailed{
 					pieceIdx, blockIdx, err,
 				})
 				return
 			}
-			fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, blockIdx, fileOffset, fileOffset+length, entry.Path)
+			// fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, blockIdx, fileOffset, fileOffset+length, entry.Path)
 		}
 	}
-	dm.torrent.SignalEvent(DiskWriteSuccessfulEv{
+	dm.torrent.SignalEvent(DiskWriteSuccessful{
 		pieceIdx, blockIdx,
 	})
 }
@@ -164,7 +162,7 @@ func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockIdx uint32
 			fileOffset := overlapStart - entry.Offset
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.RootName, entry.Path)
+			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 			if err != nil {
 				return
@@ -182,10 +180,11 @@ func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockIdx uint32
 				return
 			}
 			block = append(block, buf...)
+			fmt.Printf("READ [%v:%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, blockIdx, fileOffset, fileOffset+length, entry.Path)
 		}
 	}
 
-	dm.torrent.SignalEvent(DiskReadSuccessfulEv{
+	dm.torrent.SignalEvent(DiskReadSuccessful{
 		requestedFrom, pieceIdx, blockIdx, block,
 	})
 }
@@ -206,18 +205,18 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) {
 			fileOffset := overlapStart - entry.Offset
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.RootName, entry.Path)
+			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
 			file, err := os.OpenFile(fullPath, os.O_RDONLY, 0644)
 			defer file.Close()
 			if err != nil {
-				dm.torrent.SignalEvent(DiskHashFailedEv{pieceIdx, err})
+				dm.torrent.SignalEvent(DiskHashFailed{pieceIdx, err})
 				return
 			}
 
 			buf := make([]byte, length)
 			_, err = file.ReadAt(buf, int64(fileOffset))
 			if err != nil && err != io.EOF {
-				dm.torrent.SignalEvent(DiskHashFailedEv{pieceIdx, err})
+				dm.torrent.SignalEvent(DiskHashFailed{pieceIdx, err})
 				return
 			}
 
@@ -227,7 +226,7 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) {
 	}
 
 	if len(piece) != int(dm.PieceSize) {
-		dm.torrent.SignalEvent(DiskHashFailedEv{pieceIdx, fmt.Errorf("piece length in hash check doesn't match")})
+		dm.torrent.SignalEvent(DiskHashFailed{pieceIdx, fmt.Errorf("piece length in hash check doesn't match")})
 		return
 	}
 
@@ -236,9 +235,9 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) {
 	pieceHash := hasher.Sum([]byte{})
 
 	if slices.Compare(pieceHash, actualPieceHash) != 0 {
-		dm.torrent.SignalEvent(DiskHashFailedEv{pieceIdx, nil})
+		dm.torrent.SignalEvent(DiskHashFailed{pieceIdx, nil})
 	} else {
-		dm.torrent.SignalEvent(DiskHashSuccessfulEv{pieceIdx})
+		dm.torrent.SignalEvent(DiskHashPassed{pieceIdx})
 	}
 }
 

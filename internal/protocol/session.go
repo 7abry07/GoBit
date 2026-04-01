@@ -109,8 +109,8 @@ func (s *Session) handshakePeer(conn net.Conn) {
 	peer.Conn = c
 	c.Peer = peer
 
-	t.SignalEvent(PeerAddedEv{peer})
-	t.SignalEvent(PeerConnectedEv{c, 0})
+	t.SignalEvent(PeerAdded{peer})
+	t.SignalEvent(PeerConnected{c, 0})
 }
 
 func (s *Session) Start() {
