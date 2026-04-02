@@ -33,6 +33,13 @@ func GenerateRandomPeerId() [20]byte {
 	return [20]byte(pid)
 }
 
+func BoolToInt(val bool) int {
+	if val {
+		return 1
+	}
+	return 0
+}
+
 func BitSetToBytes(b bitset.BitSet) []byte {
 	byteLen := (b.Len() + 7) / 8
 	out := make([]byte, byteLen)
@@ -44,9 +51,6 @@ func BitSetToBytes(b bitset.BitSet) []byte {
 			out[byteIndex] |= 1 << bitIndex
 		}
 	}
-
-	// fmt.Printf("bytes before -> %v\nbytes after -> %v\n", len(b.Words())*8, len(out))
-
 	return out
 }
 
@@ -61,6 +65,5 @@ func BytesToBitSet(data []byte, bits uint) *bitset.BitSet {
 			b.Set(i)
 		}
 	}
-
 	return b
 }

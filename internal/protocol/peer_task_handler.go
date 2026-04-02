@@ -8,28 +8,27 @@ import (
 func (t *Torrent) handlePeerTask(tsk PeerTask) {
 	switch tsk := tsk.(type) {
 	case PeerKeepAliveTsk:
-		t.handlePeerKeepAliveTask(tsk)
+		t.handlePeerKeepAlive(tsk)
 	case PeerTryConnectionTsk:
-		t.handlePeerTryConnectionTask(tsk)
+		t.handlePeerTryConnection(tsk)
 	case PeerCalculateStatsTsk:
-		t.handlePeerCalculateStatsTask(tsk)
+		t.handlePeerCalculateStats(tsk)
 	}
 }
 
-func (t *Torrent) handlePeerKeepAliveTask(tsk PeerKeepAliveTsk) {
+func (t *Torrent) handlePeerKeepAlive(tsk PeerKeepAliveTsk) {
 	peer, ok := t.ActivePeers[tsk.Receiver]
 	if !ok {
-		// fmt.Printf("KEEP ALIVE NOT SENT -> %v\n", tsk.Receiver)
 		return
 	}
 	peer.Conn.KeepAlive()
 	// fmt.Printf("KEEP ALIVE SENT -> %v\n", tsk.Receiver)
 	t.Sched.Schedule(
 		PeerKeepAliveTsk{tsk.Receiver},
-		time.Now().Add(time.Minute))
+		time.Now().Add(time.Second*10))
 }
 
-func (t *Torrent) handlePeerTryConnectionTask(tsk PeerTryConnectionTsk) {
+func (t *Torrent) handlePeerTryConnection(tsk PeerTryConnectionTsk) {
 	go func() {
 		conn, err := net.DialTimeout("tcp", tsk.Peer.Endpoint.String(), time.Second*3)
 		peerConn := newPeerConnection(conn)
@@ -47,7 +46,7 @@ func (t *Torrent) handlePeerTryConnectionTask(tsk PeerTryConnectionTsk) {
 	}()
 }
 
-func (t *Torrent) handlePeerCalculateStatsTask(tsk PeerCalculateStatsTsk) {
+func (t *Torrent) handlePeerCalculateStats(tsk PeerCalculateStatsTsk) {
 	peer, ok := t.ActivePeers[tsk.Receiver]
 	if !ok {
 		return

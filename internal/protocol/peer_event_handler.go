@@ -9,37 +9,18 @@ import (
 
 func (t *Torrent) handlePeerEvent(e PeerEvent) {
 	switch e := e.(type) {
-	case PeerAdded:
-		t.handlePeerAdded(e)
-	case PeerRemoved:
-		t.handlePeerRemoved(e)
 	case PeerConnected:
 		t.handlePeerConnected(e)
 	case PeerDisconnected:
 		t.handlePeerDisconnected(e)
 	case PeerConnectionFailed:
 		t.handlePeerConnectionFailed(e)
+	case PeerAdded:
+		t.handlePeerAdded(e)
+	case PeerRemoved:
+		t.handlePeerRemoved(e)
 	case PieceCompleted:
 		t.handlePieceCompleted(e)
-	}
-}
-
-func (t *Torrent) handlePeerAdded(e PeerAdded) {
-	t.Swarm = append(t.Swarm, e.Sender)
-	// fmt.Printf("PEER ADDED -> %v\n", e.Sender.Endpoint.String())
-	if e.Sender.Conn == nil {
-		t.Sched.Schedule(
-			PeerTryConnectionTsk{e.Sender},
-			time.Now())
-	}
-}
-
-func (t *Torrent) handlePeerRemoved(e PeerRemoved) {
-	for i, val := range t.Swarm {
-		if val == e.Sender {
-			t.Swarm = append(t.Swarm[:i], t.Swarm[i+1:]...)
-			fmt.Printf("PEER REMOVED BECAUSE: %v\n", e.Cause)
-		}
 	}
 }
 
@@ -64,14 +45,13 @@ func (t *Torrent) handlePeerConnected(e PeerConnected) {
 	e.Sender.attachTorrent(t)
 	e.Sender.start()
 
-	fmt.Printf("CONNECTED (attempts: %v) -> %v\n", e.Attempts, e.Sender.Pid.String())
+	fmt.Printf("CONNECTED (attempts: %v) -> %v [%v]\n", e.Attempts, e.Sender.Pid.String(), len(t.ActivePeers))
 
 	e.Sender.SendBitfield(t.bitfield)
 
 	t.Sched.Schedule(
 		PeerKeepAliveTsk{e.Sender.Pid},
-		time.Now().Add(time.Minute))
-	time.Now().Add(time.Minute)
+		time.Now().Add(time.Second*10))
 
 	t.Sched.Schedule(
 		PeerCalculateStatsTsk{e.Sender.Pid},
@@ -86,17 +66,12 @@ func (t *Torrent) handlePeerDisconnected(e PeerDisconnected) {
 		peer.Conn.Peer.PrevTotalUploaded = peer.State.TotalUploaded
 		peer.Conn.Peer.Conn = nil
 		t.Picker.DecRefBitfield(peer.State.Pieces)
-		for _, req := range peer.State.PendingRequests {
-			// fmt.Printf("[%v] REMOVING REQUEST -> (%v:%v) \n", peer.Conn.Pid, req.Idx, req.Begin/t.Info.BlockSize)
-			t.Picker.removeBlock(req.Idx, req.Begin/t.Info.BlockSize)
-		}
-
+		t.ClearOutstandingRequests(peer)
 		if peer.State.IsOptimistic {
 			t.optimisticUnchoke = nil
 		}
 
-		peer.State.PendingRequests = nil
-		fmt.Printf("DISCONNECTED -> %v BECAUSE: %v\n", e.Sender.String(), e.Cause)
+		fmt.Printf("DISCONNECTED -> %v BECAUSE: %v [%v]\n", e.Sender.String(), e.Cause, len(t.ActivePeers))
 	}
 }
 
@@ -111,6 +86,25 @@ func (t *Torrent) handlePeerConnectionFailed(e PeerConnectionFailed) {
 		t.Sched.Schedule(
 			PeerTryConnectionTsk{e.Sender},
 			time.Now().Add(retryIn))
+	}
+}
+
+func (t *Torrent) handlePeerAdded(e PeerAdded) {
+	t.Swarm = append(t.Swarm, e.Sender)
+	// fmt.Printf("PEER ADDED -> %v\n", e.Sender.Endpoint.String())
+	if e.Sender.Conn == nil {
+		t.Sched.Schedule(
+			PeerTryConnectionTsk{e.Sender},
+			time.Now())
+	}
+}
+
+func (t *Torrent) handlePeerRemoved(e PeerRemoved) {
+	for i, val := range t.Swarm {
+		if val == e.Sender {
+			t.Swarm = append(t.Swarm[:i], t.Swarm[i+1:]...)
+			fmt.Printf("PEER REMOVED BECAUSE: %v\n", e.Cause)
+		}
 	}
 }
 

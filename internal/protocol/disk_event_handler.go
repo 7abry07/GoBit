@@ -51,7 +51,12 @@ func (t *Torrent) handleDiskHashPassed(e DiskHashPassed) {
 	t.Left--
 
 	for _, peer := range t.ActivePeers {
-		go peer.Conn.SendHave(e.PieceIdx)
+		if t.Picker.calculateInterested(*peer.State) {
+			t.SetInteresting(peer)
+		} else {
+			t.SetUninteresting(peer)
+		}
+		peer.Conn.SendHave(e.PieceIdx)
 	}
 }
 

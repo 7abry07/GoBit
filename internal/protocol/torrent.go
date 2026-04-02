@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	// "GoBit/internal/utils"
 	"github.com/bits-and-blooms/bitset"
 )
 
@@ -79,6 +80,14 @@ func (t *Torrent) loop() {
 		select {
 		case <-t.ctx.Done():
 			{
+				// for pid, peer := range t.ActivePeers {
+				// 	fmt.Printf("%v -> %v%v%v%v\n", pid,
+				// 		utils.BoolToInt(peer.State.AmChoked),
+				// 		utils.BoolToInt(peer.State.IsInteresting),
+				// 		utils.BoolToInt(peer.State.WeRequested),
+				// 		utils.BoolToInt(peer.State.WeReceived))
+				// }
+
 				fmt.Println("TORRENT STOPPED")
 				t.Swarm = nil
 				t.ActivePeers = nil
@@ -126,14 +135,6 @@ func (t *Torrent) loop() {
 	}
 }
 
-func (t *Torrent) SetUninteresting(p ActivePeer) {
-	if p.State.IsInteresting == false {
-		return
-	}
-	p.Conn.SendInterested(false)
-	p.State.IsInteresting = false
-}
-
 func (t *Torrent) Start() {
 	if t.Info.FileMode() == multi {
 		for _, file := range t.Info.Files {
@@ -163,10 +164,7 @@ func (t *Torrent) Start() {
 	go t.loop()
 
 	for _, tracker := range trackers {
-		t.SignalEvent(
-			TrackerAdded{
-				Sender: tracker,
-			})
+		t.SignalEvent(TrackerAdded{Sender: tracker})
 	}
 	now := time.Now()
 	t.Sched.Schedule(ChokerTick{}, now.Add(time.Second*10))
@@ -178,7 +176,7 @@ func (t *Torrent) Stop() {
 }
 
 func (t *Torrent) Choke(p ActivePeer) {
-	if p.State.IsChoked == true {
+	if p.State.IsChoked {
 		return
 	}
 	p.Conn.SendChoked(true)
@@ -186,7 +184,7 @@ func (t *Torrent) Choke(p ActivePeer) {
 }
 
 func (t *Torrent) Unchoke(p ActivePeer) {
-	if p.State.IsChoked == false {
+	if !p.State.IsChoked {
 		return
 	}
 	p.Conn.SendChoked(false)
@@ -194,11 +192,54 @@ func (t *Torrent) Unchoke(p ActivePeer) {
 }
 
 func (t *Torrent) SetInteresting(p ActivePeer) {
-	if p.State.IsInteresting == true {
+	if p.State.IsInteresting {
 		return
 	}
 	p.Conn.SendInterested(true)
 	p.State.IsInteresting = true
+}
+
+func (t *Torrent) SetUninteresting(p ActivePeer) {
+	if !p.State.IsInteresting {
+		return
+	}
+	p.Conn.SendInterested(false)
+	p.State.IsInteresting = false
+}
+
+func (t *Torrent) ClearOutstandingRequests(p ActivePeer) {
+	for _, req := range p.State.PendingRequests {
+		t.Picker.removeBlock(req.Idx, req.Begin/t.Info.BlockSize)
+	}
+	p.State.PendingRequests = []PeerRequest{}
+}
+
+func (t *Torrent) FillOutstandingRequest(p ActivePeer) {
+	for len(p.State.PendingRequests) < 5 {
+		newPieceIdx, ok := t.Picker.PickPiece(*p.State)
+		if !ok {
+			// fmt.Printf("NEW PIECE CANNOT BE REQUESTED\n")
+			return
+		}
+
+		newBlockIdx, ok := t.Picker.getLowestFreeBlock(newPieceIdx)
+		if !ok {
+			// fmt.Printf("NEW BLOCK FROM PIECE %v CANNOT BE CHOSEN\n", newPieceIdx)
+			return
+		}
+
+		t.Picker.setBlockState(newPieceIdx, newBlockIdx, BLOCK_REQUESTED)
+		t.Picker.setPieceState(newPieceIdx, PIECE_DOWNLOADING)
+
+		newReq := PeerRequest{
+			Idx:    newPieceIdx,
+			Begin:  newBlockIdx * t.Info.BlockSize,
+			Length: t.Info.BlockSize,
+		}
+
+		p.State.PendingRequests = append(p.State.PendingRequests, newReq)
+		p.Conn.SendRequest(newReq)
+	}
 }
 
 func (t *Torrent) SignalEvent(e Event) {

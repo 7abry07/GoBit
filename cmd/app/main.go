@@ -20,7 +20,7 @@ func main() {
 	ses.AddTorrent(torr)
 	ses.Start()
 
-	// time.Sleep(30 * time.Second)
+	// time.Sleep(90 * time.Second)
 	// ses.StopTorrent(torr)
 
 	time.Sleep(time.Hour * 10)

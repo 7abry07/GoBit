@@ -38,8 +38,8 @@ func TestValidTorrent(t *testing.T) {
 		t.Errorf("'creation date' expected: [%v], | got: [%v]", time.Unix(1572411720, 0).String(), file.CreationDate.String())
 	}
 
-	if file.PieceLength != 4194304 {
-		t.Errorf("'piece length' expected: [%v], | got: [%v]", 4194304, file.PieceLength)
+	if file.PieceSize != 4194304 {
+		t.Errorf("'piece length' expected: [%v], | got: [%v]", 4194304, file.PieceSize)
 	}
 
 	if file.Private != false {

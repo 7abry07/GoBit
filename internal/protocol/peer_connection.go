@@ -50,7 +50,8 @@ type PeerConnection struct {
 	conn    net.Conn
 	torrent *Torrent
 
-	in chan peerMessage
+	in  chan peerMessage
+	out chan peerMessage
 
 	bitfieldSent bool
 }
@@ -59,7 +60,9 @@ func newPeerConnection(conn net.Conn) *PeerConnection {
 	c := PeerConnection{}
 
 	c.peerTimeout = time.Minute * 3
+
 	c.in = make(chan peerMessage)
+	c.out = make(chan peerMessage, 1024)
 
 	c.conn = conn
 	c.Pid = PeerID{}
@@ -90,7 +93,7 @@ func (c *PeerConnection) handshakePeer(infohash [20]byte, clientPid PeerID) erro
 
 func (p *PeerConnection) loop() {
 	go p.readLoop()
-	// go p.writeLoop()
+	go p.writeLoop()
 	go p.receiveLoop()
 
 	for {
@@ -113,6 +116,17 @@ func (p *PeerConnection) readLoop() {
 		case mess := <-p.in:
 			p.keepAlivePeer.Reset(p.peerTimeout)
 			p.handleMessage(mess)
+		}
+	}
+}
+
+func (p *PeerConnection) writeLoop() {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case mess := <-p.out:
+			p.send(mess)
 		}
 	}
 }
@@ -145,7 +159,6 @@ func (p *PeerConnection) start() {
 
 func (c *PeerConnection) attachTorrent(t *Torrent) {
 	c.ctx, c.cancel = context.WithCancelCause(t.ctx)
-	// c.Pieces = utils.NewBitfield(uint32(len(t.Info.Pieces) / 20))
 	c.torrent = t
 }
 
@@ -192,23 +205,25 @@ func (p *PeerConnection) KeepAlive() {
 		Payload: nil,
 	}
 
-	go p.send(ka)
+	p.out <- ka
 }
 
 func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
 	mess := peerMessage{}
 	mess.Kind = Piece
+	mess.Peer = p
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
 	mess.Payload = append(mess.Payload, block...)
-	go p.send(mess)
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendHave(idx uint32) {
 	mess := peerMessage{}
 	mess.Kind = Have
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	go p.send(mess)
+	mess.Peer = p
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendBitfield(bf bitset.BitSet) {
@@ -216,13 +231,8 @@ func (p *PeerConnection) SendBitfield(bf bitset.BitSet) {
 	mess.Kind = Bitfield
 
 	raw := utils.BitSetToBytes(bf)
-	// words := bf.Words()
-	// raw := make([]byte, 8*len(words))
-	// for i, w := range words {
-	// 	binary.LittleEndian.PutUint64(raw[i*8:], w)
-	// }
 	mess.Payload = raw
-	go p.send(mess)
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendInterested(v bool) {
@@ -233,7 +243,8 @@ func (p *PeerConnection) SendInterested(v bool) {
 		mess.Kind = Uninterested
 	}
 	mess.Payload = nil
-	go p.send(mess)
+	mess.Peer = p
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendChoked(v bool) {
@@ -243,26 +254,29 @@ func (p *PeerConnection) SendChoked(v bool) {
 	} else {
 		mess.Kind = Unchoke
 	}
+	mess.Peer = p
 	mess.Payload = nil
-	go p.send(mess)
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendRequest(req PeerRequest) {
 	mess := peerMessage{}
 	mess.Kind = Request
+	mess.Peer = p
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
-	go p.send(mess)
+	p.out <- mess
 }
 
 func (p *PeerConnection) CancelRequest(req PeerRequest) {
 	mess := peerMessage{}
 	mess.Kind = Cancel
+	mess.Peer = p
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
 	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
-	go p.send(mess)
+	p.out <- mess
 }
 
 func (p *PeerConnection) send(mess peerMessage) {

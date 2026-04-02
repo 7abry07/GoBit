@@ -91,7 +91,7 @@ func (p *PiecePicker) PickPiece(peer ActivePeerState) (uint32, bool) {
 	availablePieces := []*pieceInfo{}
 
 	for i := range peer.Pieces.EachSet() {
-		if p.pieces[i].state != PIECE_HAVE && p.pieces[i].state != PIECE_COMPLETE {
+		if p.PieceCanBeRequested(uint32(i)) {
 			availablePieces = append(availablePieces, p.pieces[i])
 		}
 	}
@@ -187,16 +187,15 @@ func (p *PiecePicker) isPieceComplete(pieceIdx uint32) bool {
 		}
 	}
 
-	return len(receivedBlocks) == int(p.GetBlocksPerPiece(pieceIdx))
+	return uint32(len(receivedBlocks)) == p.GetBlocksPerPiece(pieceIdx)
 }
 
 func (p *PiecePicker) calculateInterested(peer ActivePeerState) bool {
 	for i := range peer.Pieces.EachSet() {
-		if p.pieces[i].state == PIECE_DONT_HAVE {
+		if p.pieces[i].state != PIECE_HAVE {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -229,6 +228,21 @@ func (p *PiecePicker) DecRefBitfield(bf *bitset.BitSet) {
 		for i := range bf.EachSet() {
 			p.pieces[i].availability--
 		}
+	}
+}
+
+func (p *PiecePicker) PieceCanBeRequested(pieceIdx uint32) bool {
+	piece := p.pieces[pieceIdx]
+
+	if piece.state == PIECE_DONT_HAVE {
+		return true
+	} else if piece.state == PIECE_HAVE || piece.state == PIECE_COMPLETE {
+		return false
+	} else {
+		if uint32(len(piece.blocks)) == p.GetBlocksPerPiece(pieceIdx) {
+			return false
+		}
+		return true
 	}
 }
 
