@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	// "GoBit/internal/utils"
 	"context"
 	"fmt"
 	"time"
@@ -13,7 +12,8 @@ type Torrent struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	Info TorrentFile
+	Started time.Time
+	Info    TorrentFile
 
 	ActivePeers map[PeerID]ActivePeer
 	Swarm       []*Peer
@@ -72,6 +72,14 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.DiskMan.RootName = torrent.Info.Name
 	torrent.DiskMan.DownloadDirectory = "/home/fabry/Downloads"
 
+	if torrent.Info.FileMode() == multi {
+		for _, file := range torrent.Info.Files {
+			torrent.DiskMan.AddFile(file.Path, file.Length)
+		}
+	} else {
+		torrent.DiskMan.AddFile(torrent.Info.Name, *torrent.Info.Length)
+	}
+
 	return &torrent
 }
 
@@ -113,6 +121,8 @@ func (t *Torrent) loop() {
 		case event := <-t.events:
 			{
 				switch e := event.(type) {
+				case TorrentEvent:
+					t.handleTorrentEvent(e)
 				case PeerEvent:
 					t.handlePeerEvent(e)
 				case PeerMessage:
@@ -127,51 +137,20 @@ func (t *Torrent) loop() {
 	}
 }
 
-func (t *Torrent) RescheduleBlock(req BlockRequest, badPeer PeerID) {
-	t.Picker.removeBlock(req.Idx, req.Begin)
-	for pid, peer := range t.ActivePeers {
-		if peer.HasPiece(req.Idx) && pid != badPeer {
-			// fmt.Printf("RESCHEDULING BLOCK (%v:%v:%v) from %v to %v\n", req.Idx, req.Begin, req.Length, badPeer, pid)
-			peer.Request(req.Idx, req.Begin, req.Length)
-			return
-		}
-	}
-}
+// func (t *Torrent) RescheduleBlock(req BlockRequest, badPeer PeerID) {
+// 	t.Picker.removeBlock(req.Idx, req.Begin)
+// 	for pid, peer := range t.ActivePeers {
+// 		if peer.HasPiece(req.Idx) && pid != badPeer {
+// 			// fmt.Printf("RESCHEDULING BLOCK (%v:%v:%v) from %v to %v\n", req.Idx, req.Begin, req.Length, badPeer, pid)
+// 			peer.Request(req.Idx, req.Begin, req.Length)
+// 			return
+// 		}
+// 	}
+// }
 
 func (t *Torrent) Start() {
-	if t.Info.FileMode() == multi {
-		for _, file := range t.Info.Files {
-			t.DiskMan.AddFile(file.Path, file.Length)
-		}
-	} else {
-		t.DiskMan.AddFile(t.Info.Name, *t.Info.Length)
-	}
-
-	trackers := []*Tracker{}
-	if t.Info.AnnounceList != nil {
-		for _, lst := range t.Info.AnnounceList {
-			for _, trackerUrl := range lst {
-				announce, err := NewTracker(trackerUrl)
-				if err == nil {
-					trackers = append(trackers, announce)
-				}
-			}
-		}
-	} else {
-		announce, err := NewTracker(*t.Info.Announce)
-		if err == nil {
-			trackers = append(trackers, announce)
-		}
-	}
-
 	go t.loop()
-
-	for _, tracker := range trackers {
-		t.SignalEvent(TrackerAdded{tracker})
-	}
-	now := time.Now()
-	t.Sched.Schedule(ChokerTick{}, now.Add(time.Second*10))
-	t.Sched.Schedule(OptimisticUnchokeTick{}, now.Add(time.Second*30))
+	t.SignalEvent(TorrentStarted{})
 
 	// go func() {
 	// 	ticker := time.NewTicker(time.Second * 5)

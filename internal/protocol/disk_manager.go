@@ -236,8 +236,8 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 	pieceHash := hasher.Sum([]byte{})
 
 	if slices.Compare(pieceHash, actualPieceHash) != 0 {
-		fmt.Printf("right: %v\n", actualPieceHash)
-		fmt.Printf("found: %v\n", pieceHash)
+		// fmt.Printf("right: %v\n", actualPieceHash)
+		// fmt.Printf("found: %v\n", pieceHash)
 		return fmt.Errorf("hash check failed")
 	} else {
 		return nil

@@ -149,7 +149,8 @@ func (p *ActivePeer) FillOutstandingRequest() {
 
 func (p *ActivePeer) ClearOutstandingRequests() {
 	for _, req := range p.State.PendingRequests {
-		p.Conn.torrent.RescheduleBlock(req, p.Conn.Pid)
+		p.Conn.torrent.SignalEvent(RescheduleBlock{p.Conn.Pid, req.Idx, req.Begin, req.Length})
+		// p.Conn.torrent.RescheduleBlock(req, p.Conn.Pid)
 		req.Received()
 	}
 	p.State.PendingRequests = nil

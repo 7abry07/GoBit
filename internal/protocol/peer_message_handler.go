@@ -37,7 +37,6 @@ func (t *Torrent) handlePeerChoke(e PeerChoke) {
 		}
 	} else {
 		// fmt.Printf("CHOKED -> %v\n", e.Sender)
-		// fmt.Printf("[%v] CLEARING OUTSTANDING REQUESTS\n", peer.Conn.Pid)
 		peer.ClearOutstandingRequests()
 	}
 }

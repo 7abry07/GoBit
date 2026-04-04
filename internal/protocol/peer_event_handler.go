@@ -23,6 +23,8 @@ func (t *Torrent) handlePeerEvent(e PeerEvent) {
 		t.handlePieceCompleted(e)
 	case RequestTimeout:
 		t.handleRequestTimeout(e)
+	case RescheduleBlock:
+		t.handleRescheduleBlock(e)
 	}
 }
 
@@ -126,6 +128,10 @@ func (t *Torrent) handlePieceCompleted(e PieceCompleted) {
 		}
 		peer.Have(e.Idx)
 	}
+
+	if t.Left == 0 {
+		t.SignalEvent(TorrentFinished{})
+	}
 }
 
 func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
@@ -137,5 +143,17 @@ func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
 		p.Cancel(pieceIdx, blockOff, e.Req.Length)
 	}
 
-	t.RescheduleBlock(e.Req, e.Req.To)
+	t.SignalEvent(RescheduleBlock{e.Req.To, e.Req.Idx, e.Req.Begin, e.Req.Length})
+	// t.RescheduleBlock(e.Req, e.Req.To)
+}
+
+func (t *Torrent) handleRescheduleBlock(e RescheduleBlock) {
+	t.Picker.removeBlock(e.Idx, e.Begin)
+	for pid, peer := range t.ActivePeers {
+		if peer.HasPiece(e.Idx) && pid != e.BadPeer {
+			// fmt.Printf("RESCHEDULING BLOCK (%v:%v:%v) from %v to %v\n", req.Idx, req.Begin, req.Length, badPeer, pid)
+			peer.Request(e.Idx, e.Begin, e.Length)
+			return
+		}
+	}
 }
