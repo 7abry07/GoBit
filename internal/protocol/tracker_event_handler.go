@@ -23,7 +23,7 @@ func (t *Torrent) handleTrackerAdded(e TrackerAdded) {
 	t.TrackerList = append(t.TrackerList, e.Sender)
 
 	t.Sched.Schedule(
-		TrackerTryAnnounceTsk{e.Sender, TRACKER_STARTED},
+		TrackerTryAnnounce{e.Sender, TRACKER_STARTED},
 		time.Now())
 
 	fmt.Printf("TRACKER ADDED -> [%v]\n", e.Sender.Announce.Host)
@@ -47,7 +47,7 @@ func (t *Torrent) handleTrackerAnnounceSuccesful(e TrackerAnnounceSuccessful) {
 	}
 
 	t.Sched.Schedule(
-		TrackerTryAnnounceTsk{e.Sender, TRACKER_NONE},
+		TrackerTryAnnounce{e.Sender, TRACKER_NONE},
 		time.Now().Add(time.Second*time.Duration(e.Response.Interval)))
 }
 
@@ -60,7 +60,7 @@ func (t *Torrent) handleTrackerAnnounceFailed(e TrackerAnnounceFailed) {
 	} else {
 		fmt.Printf("ANNOUNCE FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.Announce.String(), e.Err)
 		t.Sched.Schedule(
-			TrackerTryAnnounceTsk{e.Sender, TRACKER_NONE},
+			TrackerTryAnnounce{e.Sender, TRACKER_NONE},
 			time.Now().Add(retryIn))
 	}
 }

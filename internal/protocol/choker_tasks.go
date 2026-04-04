@@ -8,7 +8,7 @@ type ChokerTask interface {
 type ChokerTick struct{}
 type OptimisticUnchokeTick struct{}
 
-func (tsk ChokerTick) IsTask()                  {}
-func (tsk OptimisticUnchokeTick) IsTask()       {}
-func (tsk ChokerTick) IsChokerTask()            {}
-func (tsk OptimisticUnchokeTick) IsChokerTask() {}
+func (ChokerTick) IsTask()                  {}
+func (OptimisticUnchokeTick) IsTask()       {}
+func (ChokerTick) IsChokerTask()            {}
+func (OptimisticUnchokeTick) IsChokerTask() {}

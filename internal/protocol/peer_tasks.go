@@ -17,9 +17,9 @@ type PeerTryConnection struct {
 	Peer *Peer
 }
 
-func (tsk PeerKeepAlive) IsTask()          {}
-func (tsk PeerTryConnection) IsTask()      {}
-func (tsk PeerCalculateStats) IsTask()     {}
-func (tsk PeerKeepAlive) IsPeerTask()      {}
-func (tsk PeerTryConnection) IsPeerTask()  {}
-func (tsk PeerCalculateStats) IsPeerTask() {}
+func (PeerKeepAlive) IsTask()          {}
+func (PeerTryConnection) IsTask()      {}
+func (PeerCalculateStats) IsTask()     {}
+func (PeerKeepAlive) IsPeerTask()      {}
+func (PeerTryConnection) IsPeerTask()  {}
+func (PeerCalculateStats) IsPeerTask() {}

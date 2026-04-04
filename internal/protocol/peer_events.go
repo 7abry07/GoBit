@@ -34,7 +34,10 @@ type PieceCompleted struct {
 }
 
 type RequestTimeout struct {
-	Req BlockRequest
+	BadPeer PeerID
+	Idx     uint32
+	Begin   uint32
+	Length  uint32
 }
 
 type RescheduleBlock struct {
@@ -44,19 +47,20 @@ type RescheduleBlock struct {
 	Length  uint32
 }
 
-func (ev PeerConnected) IsEvent()            {}
-func (ev PeerDisconnected) IsEvent()         {}
-func (ev PeerConnectionFailed) IsEvent()     {}
-func (ev PeerRemoved) IsEvent()              {}
-func (ev PeerAdded) IsEvent()                {}
-func (ev PieceCompleted) IsEvent()           {}
-func (ev RequestTimeout) IsEvent()           {}
-func (ev RescheduleBlock) IsEvent()          {}
-func (ev PeerConnected) IsPeerEvent()        {}
-func (ev PeerDisconnected) IsPeerEvent()     {}
-func (ev PeerConnectionFailed) IsPeerEvent() {}
-func (ev PeerRemoved) IsPeerEvent()          {}
-func (ev PeerAdded) IsPeerEvent()            {}
-func (ev PieceCompleted) IsPeerEvent()       {}
-func (ev RequestTimeout) IsPeerEvent()       {}
-func (ev RescheduleBlock) IsPeerEvent()      {}
+func (PeerConnected) IsEvent()        {}
+func (PeerDisconnected) IsEvent()     {}
+func (PeerConnectionFailed) IsEvent() {}
+func (PeerRemoved) IsEvent()          {}
+func (PeerAdded) IsEvent()            {}
+func (PieceCompleted) IsEvent()       {}
+func (RequestTimeout) IsEvent()       {}
+func (RescheduleBlock) IsEvent()      {}
+
+func (PeerConnected) IsPeerEvent()        {}
+func (PeerDisconnected) IsPeerEvent()     {}
+func (PeerConnectionFailed) IsPeerEvent() {}
+func (PeerRemoved) IsPeerEvent()          {}
+func (PeerAdded) IsPeerEvent()            {}
+func (PieceCompleted) IsPeerEvent()       {}
+func (RequestTimeout) IsPeerEvent()       {}
+func (RescheduleBlock) IsPeerEvent()      {}

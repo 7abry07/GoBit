@@ -5,10 +5,10 @@ type TrackerTask interface {
 	Task
 }
 
-type TrackerTryAnnounceTsk struct {
+type TrackerTryAnnounce struct {
 	Tracker *Tracker
 	Event   TrackerEventType
 }
 
-func (tsk TrackerTryAnnounceTsk) IsTask()        {}
-func (tsk TrackerTryAnnounceTsk) IsTrackerTask() {}
+func (TrackerTryAnnounce) IsTask()        {}
+func (TrackerTryAnnounce) IsTrackerTask() {}

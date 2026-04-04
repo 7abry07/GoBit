@@ -82,11 +82,7 @@ func (dm *DiskManager) startJob(j DiskJob) {
 			// fmt.Println("DISK WRITE JOB STARTED")
 			go func() {
 				err := dm.writeBlock(j.PieceIdx, j.BlockOff, j.Data)
-				if err != nil {
-					dm.torrent.SignalEvent(DiskWriteFailed{j.PieceIdx, j.BlockOff, err})
-				} else {
-					dm.torrent.SignalEvent(DiskWriteSuccessful{j.PieceIdx, j.BlockOff})
-				}
+				dm.torrent.SignalEvent(DiskWriteFinished{j.PieceIdx, j.BlockOff, err})
 			}()
 		}
 	case DiskReadJob:
@@ -94,11 +90,7 @@ func (dm *DiskManager) startJob(j DiskJob) {
 			// fmt.Println("DISK READ JOB STARTED")
 			go func() {
 				data, err := dm.readBlock(j.RequestedFrom, j.PieceIdx, j.BlockOff, j.Length)
-				if err != nil {
-					dm.torrent.SignalEvent(DiskReadFailed{j.RequestedFrom, j.PieceIdx, j.BlockOff, err})
-				} else {
-					dm.torrent.SignalEvent(DiskReadSuccessful{j.RequestedFrom, j.PieceIdx, j.BlockOff, data})
-				}
+				dm.torrent.SignalEvent(DiskReadFinished{j.RequestedFrom, j.PieceIdx, j.BlockOff, data, err})
 			}()
 		}
 	case DiskHashJob:
@@ -106,11 +98,7 @@ func (dm *DiskManager) startJob(j DiskJob) {
 			// fmt.Println("DISK HASH JOB STARTED")
 			go func() {
 				err := dm.verifyHash(j.PieceIdx)
-				if err != nil {
-					dm.torrent.SignalEvent(DiskHashFailed{j.PieceIdx, err})
-				} else {
-					dm.torrent.SignalEvent(DiskHashPassed{j.PieceIdx})
-				}
+				dm.torrent.SignalEvent(DiskHashFinished{j.PieceIdx, err})
 			}()
 		}
 	}

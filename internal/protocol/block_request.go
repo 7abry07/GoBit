@@ -32,7 +32,7 @@ func (r *BlockRequest) StartTimeout() {
 	select {
 	case <-r.timeout.C:
 		// fmt.Println("FIRED")
-		r.torrent.SignalEvent(RequestTimeout{*r})
+		r.torrent.SignalEvent(RequestTimeout{r.To, r.Idx, r.Begin, r.Length})
 	case <-r.done:
 		if !r.timeout.Stop() {
 			<-r.timeout.C

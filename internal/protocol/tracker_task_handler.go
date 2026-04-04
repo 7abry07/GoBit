@@ -2,12 +2,12 @@ package protocol
 
 func (t *Torrent) handleTrackerTask(tsk TrackerTask) {
 	switch tsk := tsk.(type) {
-	case TrackerTryAnnounceTsk:
+	case TrackerTryAnnounce:
 		t.handleTrackerTryAnnounce(tsk)
 	}
 }
 
-func (t *Torrent) handleTrackerTryAnnounce(tsk TrackerTryAnnounceTsk) {
+func (t *Torrent) handleTrackerTryAnnounce(tsk TrackerTryAnnounce) {
 	ih := t.Info.InfoHash
 	d := t.Downloaded
 	u := t.Uploaded

@@ -24,11 +24,11 @@ type TrackerAnnounceFailed struct {
 	Err    error
 }
 
-func (ev TrackerAdded) IsEvent()                     {}
-func (ev TrackerRemoved) IsEvent()                   {}
-func (ev TrackerAnnounceFailed) IsEvent()            {}
-func (ev TrackerAnnounceSuccessful) IsEvent()        {}
-func (ev TrackerAdded) IsTrackerEvent()              {}
-func (ev TrackerRemoved) IsTrackerEvent()            {}
-func (ev TrackerAnnounceFailed) IsTrackerEvent()     {}
-func (ev TrackerAnnounceSuccessful) IsTrackerEvent() {}
+func (TrackerAdded) IsEvent()                     {}
+func (TrackerRemoved) IsEvent()                   {}
+func (TrackerAnnounceFailed) IsEvent()            {}
+func (TrackerAnnounceSuccessful) IsEvent()        {}
+func (TrackerAdded) IsTrackerEvent()              {}
+func (TrackerRemoved) IsTrackerEvent()            {}
+func (TrackerAnnounceFailed) IsTrackerEvent()     {}
+func (TrackerAnnounceSuccessful) IsTrackerEvent() {}

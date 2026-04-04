@@ -38,5 +38,5 @@ func (t *Torrent) handleTorrentStarted() {
 }
 
 func (t *Torrent) handleTorrentFinished() {
-	fmt.Printf("TORRENT [%v] FINISHED IN %v\n", t.Info.Name, time.Now().Sub(t.Started))
+	fmt.Printf("TORRENT [%v] FINISHED IN %v\n", t.Info.Name, time.Now().Sub(t.Started).Truncate(time.Second))
 }
