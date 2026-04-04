@@ -12,31 +12,6 @@ import (
 	"time"
 )
 
-type ActivePeer struct {
-	Conn  *PeerConnection
-	State *ActivePeerState
-}
-
-type ActivePeerState struct {
-	LastTickTime     time.Time
-	TotalDownloaded  int
-	TotalUploaded    int
-	LastTickDownload int
-	LastTickUpload   int
-	DownloadRate     float64
-	UploadRate       float64
-
-	Pieces *bitset.BitSet
-
-	PendingRequests []PeerRequest
-
-	IsChoked      bool
-	IsInteresting bool
-	AmChoked      bool
-	AmInteresting bool
-	IsOptimistic  bool
-}
-
 type PeerConnection struct {
 	Pid    PeerID
 	ctx    context.Context
@@ -198,7 +173,7 @@ func (p *PeerConnection) receiveLoop() {
 	}
 }
 
-func (p *PeerConnection) KeepAlive() {
+func (p *PeerConnection) SendKeepAlive() {
 	ka := peerMessage{
 		Peer:    p,
 		Kind:    KeepAlive,
@@ -206,6 +181,30 @@ func (p *PeerConnection) KeepAlive() {
 	}
 
 	p.out <- ka
+}
+
+func (p *PeerConnection) SendInterested(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Interested
+	} else {
+		mess.Kind = Uninterested
+	}
+	mess.Payload = nil
+	mess.Peer = p
+	p.out <- mess
+}
+
+func (p *PeerConnection) SendChoked(v bool) {
+	mess := peerMessage{}
+	if v {
+		mess.Kind = Choke
+	} else {
+		mess.Kind = Unchoke
+	}
+	mess.Peer = p
+	mess.Payload = nil
+	p.out <- mess
 }
 
 func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
@@ -235,31 +234,7 @@ func (p *PeerConnection) SendBitfield(bf bitset.BitSet) {
 	p.out <- mess
 }
 
-func (p *PeerConnection) SendInterested(v bool) {
-	mess := peerMessage{}
-	if v {
-		mess.Kind = Interested
-	} else {
-		mess.Kind = Uninterested
-	}
-	mess.Payload = nil
-	mess.Peer = p
-	p.out <- mess
-}
-
-func (p *PeerConnection) SendChoked(v bool) {
-	mess := peerMessage{}
-	if v {
-		mess.Kind = Choke
-	} else {
-		mess.Kind = Unchoke
-	}
-	mess.Peer = p
-	mess.Payload = nil
-	p.out <- mess
-}
-
-func (p *PeerConnection) SendRequest(req PeerRequest) {
+func (p *PeerConnection) SendRequest(req BlockRequest) {
 	mess := peerMessage{}
 	mess.Kind = Request
 	mess.Peer = p
@@ -269,7 +244,7 @@ func (p *PeerConnection) SendRequest(req PeerRequest) {
 	p.out <- mess
 }
 
-func (p *PeerConnection) CancelRequest(req PeerRequest) {
+func (p *PeerConnection) SendCancel(req BlockRequest) {
 	mess := peerMessage{}
 	mess.Kind = Cancel
 	mess.Peer = p

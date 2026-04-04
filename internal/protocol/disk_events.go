@@ -7,26 +7,26 @@ type DiskEvent interface {
 
 type DiskWriteSuccessful struct {
 	PieceIdx uint32
-	BlockIdx uint32
+	BlockOff uint32
 }
 
 type DiskWriteFailed struct {
 	PieceIdx uint32
-	BlockIdx uint32
+	BlockOff uint32
 	Err      error
 }
 
 type DiskReadSuccessful struct {
 	RequestedFrom PeerID
 	PieceIdx      uint32
-	BlockIdx      uint32
+	BlockOff      uint32
 	Data          []byte
 }
 
 type DiskReadFailed struct {
 	RequestedFrom PeerID
 	PieceIdx      uint32
-	BlockIdx      uint32
+	BlockOff      uint32
 	Err           error
 }
 

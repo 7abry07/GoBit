@@ -80,11 +80,11 @@ func (dm *DiskManager) startJob(j DiskJob) {
 		{
 			// fmt.Println("DISK WRITE JOB STARTED")
 			go func() {
-				err := dm.writeBlock(j.PieceIdx, j.BlockIdx, j.Data)
+				err := dm.writeBlock(j.PieceIdx, j.BlockOff, j.Data)
 				if err != nil {
-					dm.torrent.SignalEvent(DiskWriteFailed{j.PieceIdx, j.BlockIdx, err})
+					dm.torrent.SignalEvent(DiskWriteFailed{j.PieceIdx, j.BlockOff, err})
 				} else {
-					dm.torrent.SignalEvent(DiskWriteSuccessful{j.PieceIdx, j.BlockIdx})
+					dm.torrent.SignalEvent(DiskWriteSuccessful{j.PieceIdx, j.BlockOff})
 				}
 			}()
 		}
@@ -92,11 +92,11 @@ func (dm *DiskManager) startJob(j DiskJob) {
 		{
 			// fmt.Println("DISK READ JOB STARTED")
 			go func() {
-				data, err := dm.readBlock(j.RequestedFrom, j.PieceIdx, j.BlockIdx, j.Length)
+				data, err := dm.readBlock(j.RequestedFrom, j.PieceIdx, j.BlockOff, j.Length)
 				if err != nil {
-					dm.torrent.SignalEvent(DiskReadFailed{j.RequestedFrom, j.PieceIdx, j.BlockIdx, err})
+					dm.torrent.SignalEvent(DiskReadFailed{j.RequestedFrom, j.PieceIdx, j.BlockOff, err})
 				} else {
-					dm.torrent.SignalEvent(DiskReadSuccessful{j.RequestedFrom, j.PieceIdx, j.BlockIdx, data})
+					dm.torrent.SignalEvent(DiskReadSuccessful{j.RequestedFrom, j.PieceIdx, j.BlockOff, data})
 				}
 			}()
 		}
@@ -115,12 +115,11 @@ func (dm *DiskManager) startJob(j DiskJob) {
 	}
 }
 
-func (dm *DiskManager) writeBlock(pieceIdx, blockIdx uint32, data []byte) error {
+func (dm *DiskManager) writeBlock(pieceIdx, blockOff uint32, data []byte) error {
 	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
-	blockStart := uint64(blockIdx) * uint64(dm.BlockSize)
 
-	dataStart := pieceStart + blockStart
-	dataEnd := dataStart + uint64(dm.BlockSize)
+	dataStart := pieceStart + uint64(blockOff)
+	dataEnd := dataStart + uint64(dm.GetBlockSize(pieceIdx, blockOff))
 
 	for _, entry := range dm.files {
 		fileEnd := entry.Offset + entry.Size
@@ -132,41 +131,35 @@ func (dm *DiskManager) writeBlock(pieceIdx, blockIdx uint32, data []byte) error 
 			blockOffset := overlapStart - dataStart
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
+			fullPath := dm.GetFullPath(entry)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 			if err != nil {
-
 				return err
 			}
 
 			file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE, 0644)
-			defer file.Close()
 			if err != nil {
-				dm.torrent.SignalEvent(DiskWriteFailed{
-					pieceIdx, blockIdx, err,
-				})
 				return err
 			}
 
 			_, err = file.WriteAt(data[blockOffset:blockOffset+length], int64(fileOffset))
 			if err != nil {
-				dm.torrent.SignalEvent(DiskWriteFailed{
-					pieceIdx, blockIdx, err,
-				})
 				return err
 			}
-			// fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, blockIdx, fileOffset, fileOffset+length, entry.Path)
+
+			if pieceIdx == 11217 {
+				fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, blockOff, fileOffset, length, entry.Path)
+			}
 		}
 	}
 	return nil
 }
 
-func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockIdx uint32, length uint32) ([]byte, error) {
+func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockOff uint32, length uint32) ([]byte, error) {
 	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
-	blockStart := uint64(blockIdx) * uint64(dm.BlockSize)
 
-	dataStart := uint64(pieceStart + blockStart)
-	dataEnd := uint64(dataStart + uint64(dm.BlockSize))
+	dataStart := uint64(pieceStart + uint64(blockOff))
+	dataEnd := dataStart + uint64(dm.GetBlockSize(pieceIdx, blockOff))
 
 	block := []byte{}
 
@@ -179,14 +172,13 @@ func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockIdx uint32
 			fileOffset := overlapStart - entry.Offset
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
+			fullPath := dm.GetFullPath(entry)
 			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
 			if err != nil {
 				return nil, err
 			}
 
 			file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE, 0644)
-			defer file.Close()
 			if err != nil {
 				return nil, err
 			}
@@ -197,19 +189,15 @@ func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockIdx uint32
 				return nil, err
 			}
 			block = append(block, buf...)
-			fmt.Printf("READ [%v:%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, blockIdx, fileOffset, fileOffset+length, entry.Path)
+			fmt.Printf("READ [%v:%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, blockOff, fileOffset, length, entry.Path)
 		}
 	}
-
-	dm.torrent.SignalEvent(DiskReadSuccessful{
-		requestedFrom, pieceIdx, blockIdx, block,
-	})
 	return block, nil
 }
 
 func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
-	pieceEnd := pieceStart + uint64(dm.PieceSize)
+	pieceEnd := pieceStart + uint64(dm.GetPieceSize(pieceIdx))
 
 	actualPieceHash := dm.torrent.Info.Pieces[pieceIdx*20 : (pieceIdx*20)+20]
 	piece := []byte{}
@@ -223,9 +211,8 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 			fileOffset := overlapStart - entry.Offset
 			length := overlapEnd - overlapStart
 
-			fullPath := filepath.Join(dm.DownloadDirectory, dm.RootName, entry.Path)
+			fullPath := dm.GetFullPath(entry)
 			file, err := os.OpenFile(fullPath, os.O_RDONLY, 0644)
-			defer file.Close()
 			if err != nil {
 				return err
 			}
@@ -237,11 +224,13 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 			}
 
 			piece = append(piece, buf...)
-			// fmt.Printf("READ [%v] AT OFFSET (%v, %v) IN FILE %v\n", pieceIdx, fileOffset, fileOffset+length, entry.Path)
+			if pieceIdx == 11217 {
+				fmt.Printf("READ [%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, fileOffset, length, entry.Path)
+			}
 		}
 	}
 
-	if len(piece) != int(dm.PieceSize) {
+	if len(piece) != int(dm.GetPieceSize(pieceIdx)) {
 		return fmt.Errorf("piece length in hash check doesn't match")
 	}
 
@@ -250,9 +239,10 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 	pieceHash := hasher.Sum([]byte{})
 
 	if slices.Compare(pieceHash, actualPieceHash) != 0 {
+		fmt.Printf("right: %v\n", actualPieceHash)
+		fmt.Printf("found: %v\n", pieceHash)
 		return fmt.Errorf("hash check failed")
 	} else {
-		dm.torrent.SignalEvent(DiskHashPassed{pieceIdx})
 		return nil
 	}
 }
@@ -272,6 +262,14 @@ func (dm *DiskManager) AddFile(path string, size uint64) {
 	dm.files = append(dm.files, fileEntry)
 }
 
+func (dm *DiskManager) GetFullPath(file FileEntry) string {
+	if len(dm.files) == 1 {
+		return filepath.Join(dm.DownloadDirectory, file.Path)
+	} else {
+		return filepath.Join(dm.DownloadDirectory, dm.RootName, file.Path)
+	}
+}
+
 func (dm *DiskManager) GetPieceSize(idx uint32) uint32 {
 	if idx != dm.PieceCount-1 {
 		return dm.PieceSize
@@ -279,6 +277,11 @@ func (dm *DiskManager) GetPieceSize(idx uint32) uint32 {
 		lastFileEnd := dm.files[len(dm.files)-1].Offset + dm.files[len(dm.files)-1].Size
 		return dm.PieceSize - ((dm.PieceCount * dm.PieceSize) - uint32(lastFileEnd))
 	}
+}
+
+func (dm *DiskManager) GetBlockSize(pieceIdx, blockOff uint32) uint32 {
+	remaining := dm.GetPieceSize(pieceIdx) - blockOff
+	return min(remaining, dm.BlockSize)
 }
 
 func (dm *DiskManager) EnqueueJob(job DiskJob) {

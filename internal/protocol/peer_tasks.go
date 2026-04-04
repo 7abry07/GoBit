@@ -5,21 +5,25 @@ type PeerTask interface {
 	Task
 }
 
-type PeerKeepAliveTsk struct {
+type PeerKeepAlive struct {
 	Receiver PeerID
 }
 
-type PeerCalculateStatsTsk struct {
+type PeerCalculateStats struct {
 	Receiver PeerID
 }
 
-type PeerTryConnectionTsk struct {
+type PeerTryConnection struct {
 	Peer *Peer
 }
 
-func (tsk PeerKeepAliveTsk) IsTask()          {}
-func (tsk PeerTryConnectionTsk) IsTask()      {}
-func (tsk PeerCalculateStatsTsk) IsTask()     {}
-func (tsk PeerKeepAliveTsk) IsPeerTask()      {}
-func (tsk PeerTryConnectionTsk) IsPeerTask()  {}
-func (tsk PeerCalculateStatsTsk) IsPeerTask() {}
+type RefillRequests struct{}
+
+func (tsk PeerKeepAlive) IsTask()          {}
+func (tsk PeerTryConnection) IsTask()      {}
+func (tsk PeerCalculateStats) IsTask()     {}
+func (ev RefillRequests) IsTask()          {}
+func (tsk PeerKeepAlive) IsPeerTask()      {}
+func (tsk PeerTryConnection) IsPeerTask()  {}
+func (tsk PeerCalculateStats) IsPeerTask() {}
+func (ev RefillRequests) IsPeerTask()      {}

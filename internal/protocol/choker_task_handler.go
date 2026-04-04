@@ -23,7 +23,7 @@ func (t *Torrent) handleChokerTick(tsk ChokerTick) {
 	peersToUnchoke := UnchokeSort(activePeers)
 	for i, peer := range activePeers {
 		if i < peersToUnchoke {
-			t.Unchoke(peer)
+			peer.Unchoke()
 			if peer.State.IsOptimistic {
 				optimistic := t.ActivePeers[*t.optimisticUnchoke]
 				optimistic.State.IsOptimistic = false
@@ -34,7 +34,7 @@ func (t *Torrent) handleChokerTick(tsk ChokerTick) {
 			}
 		} else {
 			if !peer.State.IsOptimistic {
-				t.Choke(peer)
+				peer.Choke()
 			}
 		}
 	}
@@ -61,7 +61,7 @@ func (t *Torrent) handleOptimisticUnchokeTick(tsk OptimisticUnchokeTick) {
 		}
 		t.optimisticUnchoke = &optimistic.Conn.Pid
 		optimistic.State.IsOptimistic = true
-		t.Unchoke(optimistic)
+		optimistic.Unchoke()
 		// fmt.Printf("OPTIMISTICALLY UNCHOKED -> %v\n", optimistic.Conn.Pid)
 	}
 

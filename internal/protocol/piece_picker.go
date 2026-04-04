@@ -1,10 +1,8 @@
 package protocol
 
 import (
-	"fmt"
-	"slices"
-
 	"github.com/bits-and-blooms/bitset"
+	"slices"
 )
 
 type blockState uint8
@@ -21,7 +19,6 @@ const (
 	PIECE_DONT_HAVE pieceState = iota
 	PIECE_DOWNLOADING
 	PIECE_COMPLETE
-	PIECE_HAVE
 )
 
 type piecePriority uint8
@@ -33,7 +30,7 @@ const (
 )
 
 type blockInfo struct {
-	idx   uint32
+	off   uint32
 	state blockState
 }
 
@@ -49,7 +46,11 @@ type pieceInfo struct {
 type PiecePicker struct {
 	torrent *Torrent
 
-	pieces        []*pieceInfo
+	pieces []*pieceInfo
+
+	blocksInFlight  uint64
+	blocksRemaining uint64
+
 	pieceCount    uint32
 	pieceSize     uint32
 	blockSize     uint32
@@ -63,6 +64,7 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 	p := PiecePicker{}
 	p.pieces = make([]*pieceInfo, pieceCount)
 	p.pieceCount = pieceCount
+	p.blocksInFlight = 0
 	p.pieceSize = pieceSize
 	p.blockSize = blockSize
 	p.blockPerPiece = pieceSize / blockSize
@@ -71,6 +73,7 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 		p.lastPieceSize = pieceSize
 	}
 	p.lastBlockPerPiece = p.lastPieceSize / blockSize
+	p.blocksRemaining = uint64(pieceCount) * uint64(p.blockPerPiece)
 
 	p.torrent = t
 
@@ -87,7 +90,7 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 	return &p
 }
 
-func (p *PiecePicker) PickPiece(peer ActivePeerState) (uint32, bool) {
+func (p *PiecePicker) Pick(peer ActivePeerState) (uint32, uint32, bool) {
 	availablePieces := []*pieceInfo{}
 
 	for i := range peer.Pieces.EachSet() {
@@ -97,7 +100,7 @@ func (p *PiecePicker) PickPiece(peer ActivePeerState) (uint32, bool) {
 	}
 
 	if len(availablePieces) == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 
 	interestingPiece := availablePieces[0]
@@ -109,20 +112,16 @@ func (p *PiecePicker) PickPiece(peer ActivePeerState) (uint32, bool) {
 		}
 	}
 
-	return interestingPiece.idx, true
+	return interestingPiece.idx, p.getLowestFreeBlock(interestingPiece.idx), true
 }
 
-func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) (uint32, bool) {
+func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) uint32 {
 	piece := p.pieces[pieceIdx]
 
-	if len(piece.blocks) > int(p.GetBlocksPerPiece(pieceIdx))-1 {
-		return 0, false
-	}
-
 	slices.SortFunc(piece.blocks, func(a, b *blockInfo) int {
-		if a.idx < b.idx {
+		if a.off < b.off {
 			return -1
-		} else if a.idx > b.idx {
+		} else if a.off > b.off {
 			return 1
 		} else {
 			return 0
@@ -130,24 +129,34 @@ func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) (uint32, bool) {
 	})
 
 	for i := range uint32(len(piece.blocks)) {
-		if i != piece.blocks[i].idx {
-			return i, true
+		if i*p.blockSize != piece.blocks[i].off {
+			return i * p.blockSize
 		}
 	}
 
-	return uint32(len(piece.blocks)), true
+	return uint32(len(piece.blocks)) * p.blockSize
 }
 
-func (p *PiecePicker) setBlockState(pieceIdx uint32, blockIdx uint32, state blockState) {
+func (p *PiecePicker) removeBlock(pieceIdx uint32, blockOff uint32) {
+	piece := p.pieces[pieceIdx]
+	for i, block := range piece.blocks {
+		if block.off == blockOff {
+			piece.blocks = append(piece.blocks[:i], piece.blocks[i+1:]...)
+			return
+		}
+	}
+}
+
+func (p *PiecePicker) setBlockState(pieceIdx uint32, blockOff uint32, state blockState) {
 	piece := p.pieces[pieceIdx]
 	for _, b := range piece.blocks {
-		if b.idx == blockIdx {
+		if b.off == blockOff {
 			b.state = state
 			return
 		}
 	}
 	piece.blocks = append(piece.blocks, &blockInfo{
-		blockIdx, state,
+		blockOff, state,
 	})
 }
 
@@ -166,17 +175,6 @@ func (p *PiecePicker) setPieceState(pieceIdx uint32, state pieceState) {
 	p.pieces[pieceIdx].state = state
 }
 
-func (p *PiecePicker) removeBlock(pieceIdx uint32, blockIdx uint32) {
-	piece := p.pieces[pieceIdx]
-	for i, block := range piece.blocks {
-		if block.idx == blockIdx {
-			piece.blocks = append(piece.blocks[:i], piece.blocks[i+1:]...)
-			return
-		}
-	}
-	panic(fmt.Errorf("non existing block removed (%v:%v)", pieceIdx, blockIdx))
-}
-
 func (p *PiecePicker) isPieceComplete(pieceIdx uint32) bool {
 	piece := p.pieces[pieceIdx]
 	receivedBlocks := []*blockInfo{}
@@ -190,14 +188,22 @@ func (p *PiecePicker) isPieceComplete(pieceIdx uint32) bool {
 	return uint32(len(receivedBlocks)) == p.GetBlocksPerPiece(pieceIdx)
 }
 
-func (p *PiecePicker) calculateInterested(peer ActivePeerState) bool {
+func (p *PiecePicker) CalculateInterested(piecesHave bitset.BitSet, peer ActivePeerState) bool {
 	for i := range peer.Pieces.EachSet() {
-		if p.pieces[i].state != PIECE_HAVE {
+		if !piecesHave.Test(i) {
 			return true
 		}
 	}
 	return false
 }
+
+// func (p *PiecePicker) ShouldGoEndgame() bool {
+// 	if p.blocksRemaining < p.blocksInFlight &&
+// 		p.blocksRemaining <= 20 {
+// 		return true
+// 	}
+// 	return false
+// }
 
 func (p *PiecePicker) SetPriority(idx uint32, prio piecePriority) {
 	p.pieces[idx].priority = prio
@@ -236,7 +242,7 @@ func (p *PiecePicker) PieceCanBeRequested(pieceIdx uint32) bool {
 
 	if piece.state == PIECE_DONT_HAVE {
 		return true
-	} else if piece.state == PIECE_HAVE || piece.state == PIECE_COMPLETE {
+	} else if piece.state == PIECE_COMPLETE {
 		return false
 	} else {
 		if uint32(len(piece.blocks)) == p.GetBlocksPerPiece(pieceIdx) {
@@ -250,12 +256,17 @@ func (p *PiecePicker) Piority(idx uint32) piecePriority {
 	return p.pieces[idx].priority
 }
 
-func (p *PiecePicker) GetPieceLength(idx uint32) uint32 {
+func (p *PiecePicker) GetPieceSize(idx uint32) uint32 {
 	if idx == p.pieceCount-1 {
 		return p.lastPieceSize
 	} else {
 		return p.pieceSize
 	}
+}
+
+func (p *PiecePicker) GetBlockSize(pieceIdx, blockOff uint32) uint32 {
+	remaining := p.GetPieceSize(pieceIdx) - blockOff
+	return min(remaining, p.blockSize)
 }
 
 func (p *PiecePicker) GetBlocksPerPiece(idx uint32) uint32 {

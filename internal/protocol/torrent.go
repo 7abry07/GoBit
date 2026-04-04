@@ -1,11 +1,11 @@
 package protocol
 
 import (
+	// "GoBit/internal/utils"
 	"context"
 	"fmt"
 	"time"
 
-	// "GoBit/internal/utils"
 	"github.com/bits-and-blooms/bitset"
 )
 
@@ -80,14 +80,6 @@ func (t *Torrent) loop() {
 		select {
 		case <-t.ctx.Done():
 			{
-				// for pid, peer := range t.ActivePeers {
-				// 	fmt.Printf("%v -> %v%v%v%v\n", pid,
-				// 		utils.BoolToInt(peer.State.AmChoked),
-				// 		utils.BoolToInt(peer.State.IsInteresting),
-				// 		utils.BoolToInt(peer.State.WeRequested),
-				// 		utils.BoolToInt(peer.State.WeReceived))
-				// }
-
 				fmt.Println("TORRENT STOPPED")
 				t.Swarm = nil
 				t.ActivePeers = nil
@@ -135,6 +127,17 @@ func (t *Torrent) loop() {
 	}
 }
 
+func (t *Torrent) RescheduleBlock(req BlockRequest, badPeer PeerID) {
+	t.Picker.removeBlock(req.Idx, req.Begin)
+	for pid, peer := range t.ActivePeers {
+		if peer.HasPiece(req.Idx) && pid != badPeer {
+			// fmt.Printf("RESCHEDULING BLOCK (%v:%v:%v) from %v to %v\n", req.Idx, req.Begin, req.Length, badPeer, pid)
+			peer.Request(req.Idx, req.Begin, req.Length)
+			return
+		}
+	}
+}
+
 func (t *Torrent) Start() {
 	if t.Info.FileMode() == multi {
 		for _, file := range t.Info.Files {
@@ -164,82 +167,35 @@ func (t *Torrent) Start() {
 	go t.loop()
 
 	for _, tracker := range trackers {
-		t.SignalEvent(TrackerAdded{Sender: tracker})
+		t.SignalEvent(TrackerAdded{tracker})
 	}
 	now := time.Now()
 	t.Sched.Schedule(ChokerTick{}, now.Add(time.Second*10))
 	t.Sched.Schedule(OptimisticUnchokeTick{}, now.Add(time.Second*30))
+	t.Sched.Schedule(RefillRequests{}, now.Add(time.Second*10))
+
+	// go func() {
+	// 	ticker := time.NewTicker(time.Second * 5)
+	// 	for {
+	// 		select {
+	// 		case <-ticker.C:
+	// 			for pid, peer := range t.ActivePeers {
+	// 				// if !peer.State.AmChoked && len(peer.State.PendingRequests) == 0 {
+	// 				// 	panic(fmt.Errorf("client unchoked but not requesting from %v", pid))
+	// 				// }
+	// 				fmt.Printf("%v -> state: %v%v | pendingReqs: %v | seed: %v\n", pid,
+	// 					utils.BoolToInt(peer.State.AmChoked),
+	// 					utils.BoolToInt(peer.State.IsInteresting),
+	// 					len(peer.State.PendingRequests),
+	// 					peer.State.IsSeed)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 }
 
 func (t *Torrent) Stop() {
 	t.cancel()
-}
-
-func (t *Torrent) Choke(p ActivePeer) {
-	if p.State.IsChoked {
-		return
-	}
-	p.Conn.SendChoked(true)
-	p.State.IsChoked = true
-}
-
-func (t *Torrent) Unchoke(p ActivePeer) {
-	if !p.State.IsChoked {
-		return
-	}
-	p.Conn.SendChoked(false)
-	p.State.IsChoked = false
-}
-
-func (t *Torrent) SetInteresting(p ActivePeer) {
-	if p.State.IsInteresting {
-		return
-	}
-	p.Conn.SendInterested(true)
-	p.State.IsInteresting = true
-}
-
-func (t *Torrent) SetUninteresting(p ActivePeer) {
-	if !p.State.IsInteresting {
-		return
-	}
-	p.Conn.SendInterested(false)
-	p.State.IsInteresting = false
-}
-
-func (t *Torrent) ClearOutstandingRequests(p ActivePeer) {
-	for _, req := range p.State.PendingRequests {
-		t.Picker.removeBlock(req.Idx, req.Begin/t.Info.BlockSize)
-	}
-	p.State.PendingRequests = []PeerRequest{}
-}
-
-func (t *Torrent) FillOutstandingRequest(p ActivePeer) {
-	for len(p.State.PendingRequests) < 5 {
-		newPieceIdx, ok := t.Picker.PickPiece(*p.State)
-		if !ok {
-			// fmt.Printf("NEW PIECE CANNOT BE REQUESTED\n")
-			return
-		}
-
-		newBlockIdx, ok := t.Picker.getLowestFreeBlock(newPieceIdx)
-		if !ok {
-			// fmt.Printf("NEW BLOCK FROM PIECE %v CANNOT BE CHOSEN\n", newPieceIdx)
-			return
-		}
-
-		t.Picker.setBlockState(newPieceIdx, newBlockIdx, BLOCK_REQUESTED)
-		t.Picker.setPieceState(newPieceIdx, PIECE_DOWNLOADING)
-
-		newReq := PeerRequest{
-			Idx:    newPieceIdx,
-			Begin:  newBlockIdx * t.Info.BlockSize,
-			Length: t.Info.BlockSize,
-		}
-
-		p.State.PendingRequests = append(p.State.PendingRequests, newReq)
-		p.Conn.SendRequest(newReq)
-	}
 }
 
 func (t *Torrent) SignalEvent(e Event) {

@@ -12,6 +12,8 @@ func (t *Torrent) handleDiskEvent(e DiskEvent) {
 		t.handleDiskWriteFailed(e)
 	case DiskReadSuccessful:
 		t.handleDiskReadSuccessful(e)
+	case DiskReadFailed:
+		t.handleDiskReadFailed(e)
 	case DiskHashPassed:
 		t.handleDiskHashPassed(e)
 	case DiskHashFailed:
@@ -20,44 +22,41 @@ func (t *Torrent) handleDiskEvent(e DiskEvent) {
 }
 
 func (t *Torrent) handleDiskWriteSuccessful(e DiskWriteSuccessful) {
-	// fmt.Printf("WRITTEN (%v:%v) TO DISK\n", e.PieceIdx, e.BlockIdx)
-	t.Picker.setBlockState(e.PieceIdx, e.BlockIdx, BLOCK_HAVE)
+	// fmt.Printf("WRITTEN (%v:%v) TO DISK\n", e.PieceIdx, e.BlockOff)
+	t.Picker.setBlockState(e.PieceIdx, e.BlockOff, BLOCK_HAVE)
+
+	//
+	t.Picker.blocksInFlight--
+	t.Picker.blocksRemaining--
+	//
 
 	if t.Picker.isPieceComplete(e.PieceIdx) {
-		t.SignalEvent(PieceCompleted{e.PieceIdx})
+		t.DiskMan.EnqueueJob(DiskHashJob{e.PieceIdx})
 	}
 }
 
 func (t *Torrent) handleDiskWriteFailed(e DiskWriteFailed) {
-	fmt.Println("DISK WRITE (%v:%v) FAILED -> %v", e.PieceIdx, e.BlockIdx, e.Err)
-	t.Picker.removeBlock(e.PieceIdx, e.BlockIdx)
+	fmt.Println("DISK WRITE (%v:%v) FAILED -> %v", e.PieceIdx, e.BlockOff, e.Err)
+	t.Picker.removeBlock(e.PieceIdx, e.BlockOff)
 }
 
 func (t *Torrent) handleDiskReadSuccessful(e DiskReadSuccessful) {
-	fmt.Printf("READ (%v:%v) FROM DISK\n", e.PieceIdx, e.BlockIdx)
+	fmt.Printf("READ (%v:%v) FROM DISK\n", e.PieceIdx, e.BlockOff)
 	peer, ok := t.ActivePeers[e.RequestedFrom]
 	if !ok {
 		return
 	}
-	peer.Conn.SendBlock(e.PieceIdx, e.BlockIdx*t.DiskMan.BlockSize, e.Data)
+	peer.Piece(e.PieceIdx, e.BlockOff, e.Data)
+}
+
+func (t *Torrent) handleDiskReadFailed(e DiskReadFailed) {
+	fmt.Printf("READ FAILED (%v:%v) BECAUSE: %v\n", e.PieceIdx, e.BlockOff, e.Err)
 }
 
 func (t *Torrent) handleDiskHashPassed(e DiskHashPassed) {
 	// fmt.Println("HASH CHECK PASSED")
-	t.Picker.setPieceState(e.PieceIdx, PIECE_HAVE)
-	t.Picker.deletePieceBlockData(e.PieceIdx)
-	t.bitfield.Set(uint(e.PieceIdx))
-	t.Downloaded++
-	t.Left--
+	t.SignalEvent(PieceCompleted{e.PieceIdx})
 
-	for _, peer := range t.ActivePeers {
-		if t.Picker.calculateInterested(*peer.State) {
-			t.SetInteresting(peer)
-		} else {
-			t.SetUninteresting(peer)
-		}
-		peer.Conn.SendHave(e.PieceIdx)
-	}
 }
 
 func (t *Torrent) handleDiskHashFailed(e DiskHashFailed) {

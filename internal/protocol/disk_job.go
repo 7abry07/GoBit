@@ -6,14 +6,14 @@ type DiskJob interface {
 
 type DiskWriteJob struct {
 	PieceIdx uint32
-	BlockIdx uint32
+	BlockOff uint32
 	Data     []byte
 }
 
 type DiskReadJob struct {
 	RequestedFrom PeerID
 	PieceIdx      uint32
-	BlockIdx      uint32
+	BlockOff      uint32
 	Length        uint32
 }
 

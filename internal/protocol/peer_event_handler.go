@@ -21,10 +21,13 @@ func (t *Torrent) handlePeerEvent(e PeerEvent) {
 		t.handlePeerRemoved(e)
 	case PieceCompleted:
 		t.handlePieceCompleted(e)
+	case RequestTimeout:
+		t.handleRequestTimeout(e)
 	}
 }
 
 func (t *Torrent) handlePeerConnected(e PeerConnected) {
+	fmt.Printf("CONNECTED (attempts: %v) -> %v [%v]\n", e.Attempts, e.Sender.Pid.String(), len(t.ActivePeers))
 	state := ActivePeerState{
 		LastTickTime:     time.Now(),
 		Pieces:           bitset.New(uint(t.Picker.pieceCount)),
@@ -45,16 +48,14 @@ func (t *Torrent) handlePeerConnected(e PeerConnected) {
 	e.Sender.attachTorrent(t)
 	e.Sender.start()
 
-	fmt.Printf("CONNECTED (attempts: %v) -> %v [%v]\n", e.Attempts, e.Sender.Pid.String(), len(t.ActivePeers))
-
-	e.Sender.SendBitfield(t.bitfield)
+	peer.Bitfield(t.bitfield)
 
 	t.Sched.Schedule(
-		PeerKeepAliveTsk{e.Sender.Pid},
+		PeerKeepAlive{e.Sender.Pid},
 		time.Now().Add(time.Second*10))
 
 	t.Sched.Schedule(
-		PeerCalculateStatsTsk{e.Sender.Pid},
+		PeerCalculateStats{e.Sender.Pid},
 		time.Now().Add(time.Second))
 }
 
@@ -66,12 +67,12 @@ func (t *Torrent) handlePeerDisconnected(e PeerDisconnected) {
 		peer.Conn.Peer.PrevTotalUploaded = peer.State.TotalUploaded
 		peer.Conn.Peer.Conn = nil
 		t.Picker.DecRefBitfield(peer.State.Pieces)
-		t.ClearOutstandingRequests(peer)
 		if peer.State.IsOptimistic {
 			t.optimisticUnchoke = nil
 		}
 
 		fmt.Printf("DISCONNECTED -> %v BECAUSE: %v [%v]\n", e.Sender.String(), e.Cause, len(t.ActivePeers))
+		peer.ClearOutstandingRequests()
 	}
 }
 
@@ -84,7 +85,7 @@ func (t *Torrent) handlePeerConnectionFailed(e PeerConnectionFailed) {
 	} else {
 		// fmt.Printf("CONNECTION FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.Endpoint, e.Err)
 		t.Sched.Schedule(
-			PeerTryConnectionTsk{e.Sender},
+			PeerTryConnection{e.Sender},
 			time.Now().Add(retryIn))
 	}
 }
@@ -94,7 +95,7 @@ func (t *Torrent) handlePeerAdded(e PeerAdded) {
 	// fmt.Printf("PEER ADDED -> %v\n", e.Sender.Endpoint.String())
 	if e.Sender.Conn == nil {
 		t.Sched.Schedule(
-			PeerTryConnectionTsk{e.Sender},
+			PeerTryConnection{e.Sender},
 			time.Now())
 	}
 }
@@ -104,15 +105,37 @@ func (t *Torrent) handlePeerRemoved(e PeerRemoved) {
 		if val == e.Sender {
 			t.Swarm = append(t.Swarm[:i], t.Swarm[i+1:]...)
 			fmt.Printf("PEER REMOVED BECAUSE: %v\n", e.Cause)
+			return
 		}
 	}
 }
 
 func (t *Torrent) handlePieceCompleted(e PieceCompleted) {
-	fmt.Printf("PIECE COMPLETED -> [%v]\n", e.Idx)
 	t.Picker.setPieceState(e.Idx, PIECE_COMPLETE)
 	t.Picker.deletePieceBlockData(e.Idx)
-	t.DiskMan.EnqueueJob(DiskHashJob{
-		e.Idx,
-	})
+	t.bitfield.Set(uint(e.Idx))
+	t.Downloaded++
+	t.Left--
+
+	fmt.Printf("PIECE COMPLETED -> %v [%v]\n", e.Idx, t.Downloaded)
+	for _, peer := range t.ActivePeers {
+		if t.Picker.CalculateInterested(t.bitfield, *peer.State) {
+			peer.SetInteresting()
+		} else {
+			peer.SetUninteresting()
+		}
+		peer.Have(e.Idx)
+	}
+}
+
+func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
+	// fmt.Printf("REQUEST TIMEOUT -> %v [%v:%v:%v] \n", e.Req.To, e.Req.Idx, e.Req.Begin, e.Req.Length)
+	p, ok := t.ActivePeers[e.Req.To]
+	pieceIdx := e.Req.Idx
+	blockOff := e.Req.Begin
+	if ok {
+		p.Cancel(pieceIdx, blockOff, e.Req.Length)
+	}
+
+	t.RescheduleBlock(e.Req, e.Req.To)
 }

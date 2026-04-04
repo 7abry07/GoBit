@@ -33,12 +33,12 @@ func (t *Torrent) handlePeerChoke(e PeerChoke) {
 	if !e.Value {
 		// fmt.Printf("UNCHOKED -> %v\n", e.Sender)
 		if peer.State.IsInteresting {
-			t.FillOutstandingRequest(peer)
+			peer.FillOutstandingRequest()
 		}
 	} else {
 		// fmt.Printf("CHOKED -> %v\n", e.Sender)
 		// fmt.Printf("[%v] CLEARING OUTSTANDING REQUESTS\n", peer.Conn.Pid)
-		t.ClearOutstandingRequests(peer)
+		peer.ClearOutstandingRequests()
 	}
 }
 
@@ -60,10 +60,14 @@ func (t *Torrent) handlePeerHave(e PeerHave) {
 	peer.State.Pieces.Set(uint(e.Idx))
 	t.Picker.IncRef(e.Idx)
 
+	if peer.State.Pieces.All() {
+		peer.State.IsSeed = true
+	}
+
 	if !t.bitfield.Test(uint(e.Idx)) {
-		t.SetInteresting(peer)
+		peer.SetInteresting()
 	} else {
-		t.SetUninteresting(peer)
+		peer.SetUninteresting()
 	}
 }
 
@@ -76,17 +80,21 @@ func (t *Torrent) handlePeerBitfield(e PeerBitfield) {
 	peer.State.Pieces = e.Bitfield
 	t.Picker.IncRefBitfield(e.Bitfield)
 
-	if t.Picker.calculateInterested(*peer.State) {
-		t.SetInteresting(peer)
+	if e.Bitfield.All() {
+		peer.State.IsSeed = true
+	}
+
+	if t.Picker.CalculateInterested(t.bitfield, *peer.State) {
+		peer.SetInteresting()
 	} else {
-		t.SetUninteresting(peer)
+		peer.SetUninteresting()
 	}
 }
 
 func (t *Torrent) handlePeerRequest(e PeerRequest) {
 	fmt.Printf("REQUEST -> [%v]\n", e.Sender)
 	t.DiskMan.EnqueueJob(DiskReadJob{
-		e.Sender, e.Idx, e.Begin / t.Info.BlockSize, e.Length,
+		e.Sender, e.Idx, e.Begin, e.Length,
 	})
 }
 
@@ -96,28 +104,29 @@ func (t *Torrent) handlePeerPiece(e PeerPiece) {
 		return
 	}
 
-	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin/t.Info.BlockSize, e.Sender)
+	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin, e.Sender)
 	for i := len(peer.State.PendingRequests) - 1; i >= 0; i-- {
 		req := peer.State.PendingRequests[i]
-		if req.Begin == e.Begin {
+		if req.Begin == e.Begin && req.Idx == e.Idx {
 			peer.State.TotalUploaded += len(e.Block)
 
 			peer.State.PendingRequests[i] = peer.State.PendingRequests[len(peer.State.PendingRequests)-1]
 			peer.State.PendingRequests = peer.State.PendingRequests[:len(peer.State.PendingRequests)-1]
+			req.Received()
 
-			t.Picker.setBlockState(e.Idx, e.Begin/t.Info.BlockSize, BLOCK_RECEIVED)
+			t.Picker.setBlockState(e.Idx, e.Begin, BLOCK_RECEIVED)
 			t.DiskMan.EnqueueJob(DiskWriteJob{
-				e.Idx, e.Begin / t.Info.BlockSize, e.Block,
+				e.Idx, e.Begin, e.Block,
 			})
 			break
 		}
 	}
 	if !peer.State.AmChoked {
-		t.FillOutstandingRequest(peer)
+		peer.FillOutstandingRequest()
 	}
 }
 
 func (t *Torrent) handlePeerCancel(e PeerCancel) {
-	fmt.Printf("CANCEL (%v:%v-%v) -> [%v]\n", e.Sender, e.Idx, e.Begin/t.Info.BlockSize, e.Length)
+	fmt.Printf("CANCEL (%v:%v-%v) -> [%v]\n", e.Sender, e.Idx, e.Begin, e.Length)
 	// TODO
 }
