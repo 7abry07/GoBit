@@ -385,7 +385,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 		}
 		p.torrent.SignalEvent(PeerRequest{p.Pid, idx, begin, length})
 	case Piece:
-		if uint32(len(mess.Payload)) != 8+p.torrent.Info.BlockSize {
+		if uint32(len(mess.Payload)) < 8 {
 			p.cancel(fmt.Errorf("%v (piece)", Peer_bad_message_err))
 			return
 		}

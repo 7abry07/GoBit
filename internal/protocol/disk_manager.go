@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,13 +26,13 @@ type DiskManager struct {
 	RootName          string
 	DownloadDirectory string
 
-	PieceCount    uint32
-	PieceSize     uint32
-	BlockSize     uint32
-	BlockPerPiece uint32
+	pieceCount    uint32
+	pieceSize     uint32
+	blockSize     uint32
+	blockPerPiece uint32
 
-	LastPieceSize     uint32
-	LastBlockPerPiece uint32
+	lastpieceSize     uint32
+	lastBlockPerPiece uint32
 
 	jobs chan DiskJob
 
@@ -44,15 +45,15 @@ func NewDiskManager(torrent *Torrent, totalSize uint64, pieceCount, pieceSize, b
 	dm.ctx, dm.cancel = context.WithCancel(torrent.ctx)
 	dm.torrent = torrent
 	dm.RootName = ""
-	dm.PieceCount = pieceCount
-	dm.PieceSize = pieceSize
-	dm.BlockSize = blockSize
-	dm.BlockPerPiece = pieceSize / blockSize
-	dm.LastPieceSize = uint32(totalSize % uint64(pieceSize))
-	if dm.LastPieceSize == 0 {
-		dm.LastPieceSize = pieceSize
+	dm.pieceCount = pieceCount
+	dm.pieceSize = pieceSize
+	dm.blockSize = blockSize
+	dm.blockPerPiece = pieceSize / blockSize
+	dm.lastpieceSize = uint32(totalSize % uint64(pieceSize))
+	if dm.lastpieceSize == 0 {
+		dm.lastpieceSize = pieceSize
 	}
-	dm.LastBlockPerPiece = dm.LastPieceSize / blockSize
+	dm.lastBlockPerPiece = uint32(math.Ceil(float64(dm.lastpieceSize) / float64(blockSize)))
 	dm.files = nil
 
 	dm.jobs = make(chan DiskJob, 1024)
@@ -116,10 +117,10 @@ func (dm *DiskManager) startJob(j DiskJob) {
 }
 
 func (dm *DiskManager) writeBlock(pieceIdx, blockOff uint32, data []byte) error {
-	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
+	pieceStart := uint64(pieceIdx) * uint64(dm.pieceSize)
 
 	dataStart := pieceStart + uint64(blockOff)
-	dataEnd := dataStart + uint64(dm.GetBlockSize(pieceIdx, blockOff))
+	dataEnd := dataStart + uint64(dm.GetblockSize(pieceIdx, blockOff))
 
 	for _, entry := range dm.files {
 		fileEnd := entry.Offset + entry.Size
@@ -147,19 +148,17 @@ func (dm *DiskManager) writeBlock(pieceIdx, blockOff uint32, data []byte) error 
 				return err
 			}
 
-			if pieceIdx == 11217 {
-				fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, blockOff, fileOffset, length, entry.Path)
-			}
+			// fmt.Printf("WRITTEN [%v:%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, blockOff, fileOffset, length, entry.Path)
 		}
 	}
 	return nil
 }
 
 func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockOff uint32, length uint32) ([]byte, error) {
-	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
+	pieceStart := uint64(pieceIdx) * uint64(dm.pieceSize)
 
 	dataStart := uint64(pieceStart + uint64(blockOff))
-	dataEnd := dataStart + uint64(dm.GetBlockSize(pieceIdx, blockOff))
+	dataEnd := dataStart + uint64(dm.GetblockSize(pieceIdx, blockOff))
 
 	block := []byte{}
 
@@ -196,8 +195,8 @@ func (dm *DiskManager) readBlock(requestedFrom PeerID, pieceIdx, blockOff uint32
 }
 
 func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
-	pieceStart := uint64(pieceIdx) * uint64(dm.PieceSize)
-	pieceEnd := pieceStart + uint64(dm.GetPieceSize(pieceIdx))
+	pieceStart := uint64(pieceIdx) * uint64(dm.pieceSize)
+	pieceEnd := pieceStart + uint64(dm.GetpieceSize(pieceIdx))
 
 	actualPieceHash := dm.torrent.Info.Pieces[pieceIdx*20 : (pieceIdx*20)+20]
 	piece := []byte{}
@@ -224,13 +223,11 @@ func (dm *DiskManager) verifyHash(pieceIdx uint32) error {
 			}
 
 			piece = append(piece, buf...)
-			if pieceIdx == 11217 {
-				fmt.Printf("READ [%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, fileOffset, length, entry.Path)
-			}
+			// fmt.Printf("READ [%v] AT OFFSET (%v : %v) IN FILE %v\n", pieceIdx, fileOffset, length, entry.Path)
 		}
 	}
 
-	if len(piece) != int(dm.GetPieceSize(pieceIdx)) {
+	if len(piece) != int(dm.GetpieceSize(pieceIdx)) {
 		return fmt.Errorf("piece length in hash check doesn't match")
 	}
 
@@ -270,18 +267,18 @@ func (dm *DiskManager) GetFullPath(file FileEntry) string {
 	}
 }
 
-func (dm *DiskManager) GetPieceSize(idx uint32) uint32 {
-	if idx != dm.PieceCount-1 {
-		return dm.PieceSize
+func (dm *DiskManager) GetpieceSize(idx uint32) uint32 {
+	if idx != dm.pieceCount-1 {
+		return dm.pieceSize
 	} else {
 		lastFileEnd := dm.files[len(dm.files)-1].Offset + dm.files[len(dm.files)-1].Size
-		return dm.PieceSize - ((dm.PieceCount * dm.PieceSize) - uint32(lastFileEnd))
+		return dm.pieceSize - ((dm.pieceCount * dm.pieceSize) - uint32(lastFileEnd))
 	}
 }
 
-func (dm *DiskManager) GetBlockSize(pieceIdx, blockOff uint32) uint32 {
-	remaining := dm.GetPieceSize(pieceIdx) - blockOff
-	return min(remaining, dm.BlockSize)
+func (dm *DiskManager) GetblockSize(pieceIdx, blockOff uint32) uint32 {
+	remaining := dm.GetpieceSize(pieceIdx) - blockOff
+	return min(remaining, dm.blockSize)
 }
 
 func (dm *DiskManager) EnqueueJob(job DiskJob) {

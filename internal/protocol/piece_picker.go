@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"github.com/bits-and-blooms/bitset"
+	"math"
 	"slices"
 )
 
@@ -72,7 +73,7 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 	if p.lastPieceSize == 0 {
 		p.lastPieceSize = pieceSize
 	}
-	p.lastBlockPerPiece = p.lastPieceSize / blockSize
+	p.lastBlockPerPiece = uint32(math.Ceil(float64(p.lastPieceSize) / float64(blockSize)))
 	p.blocksRemaining = uint64(pieceCount) * uint64(p.blockPerPiece)
 
 	p.torrent = t

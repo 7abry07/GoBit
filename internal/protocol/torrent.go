@@ -172,7 +172,6 @@ func (t *Torrent) Start() {
 	now := time.Now()
 	t.Sched.Schedule(ChokerTick{}, now.Add(time.Second*10))
 	t.Sched.Schedule(OptimisticUnchokeTick{}, now.Add(time.Second*30))
-	t.Sched.Schedule(RefillRequests{}, now.Add(time.Second*10))
 
 	// go func() {
 	// 	ticker := time.NewTicker(time.Second * 5)

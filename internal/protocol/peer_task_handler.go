@@ -13,8 +13,6 @@ func (t *Torrent) handlePeerTask(tsk PeerTask) {
 		t.handlePeerTryConnection(tsk)
 	case PeerCalculateStats:
 		t.handlePeerCalculateStats(tsk)
-	case RefillRequests:
-		t.handleRefillRequests()
 	}
 }
 
@@ -71,12 +69,4 @@ func (t *Torrent) handlePeerCalculateStats(tsk PeerCalculateStats) {
 	t.Sched.Schedule(
 		PeerCalculateStats{tsk.Receiver},
 		time.Now().Add(time.Second))
-}
-
-func (t *Torrent) handleRefillRequests() {
-	for _, peer := range t.ActivePeers {
-		if !peer.State.AmChoked && peer.State.IsInteresting {
-			peer.FillOutstandingRequest()
-		}
-	}
 }
