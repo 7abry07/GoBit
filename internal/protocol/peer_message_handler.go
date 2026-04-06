@@ -60,7 +60,12 @@ func (t *Torrent) handlePeerHave(e PeerHave) {
 	t.Picker.IncRef(e.Idx)
 
 	if peer.State.Pieces.All() {
-		peer.State.IsSeed = true
+		if t.Seeding {
+			t.SignalEvent(PeerRemoved{peer.Conn.Peer, Peer_redundant})
+			t.SignalEvent(PeerDisconnected{peer.Conn.Pid, Peer_redundant})
+		} else {
+			peer.State.IsSeed = true
+		}
 	}
 
 	if !t.bitfield.Test(uint(e.Idx)) {
@@ -80,7 +85,12 @@ func (t *Torrent) handlePeerBitfield(e PeerBitfield) {
 	t.Picker.IncRefBitfield(e.Bitfield)
 
 	if e.Bitfield.All() {
-		peer.State.IsSeed = true
+		if t.Seeding {
+			t.SignalEvent(PeerRemoved{peer.Conn.Peer, Peer_redundant})
+			t.SignalEvent(PeerDisconnected{peer.Conn.Pid, Peer_redundant})
+		} else {
+			peer.State.IsSeed = true
+		}
 	}
 
 	if t.Picker.CalculateInterested(t.bitfield, *peer.State) {

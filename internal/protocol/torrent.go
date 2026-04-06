@@ -33,6 +33,8 @@ type Torrent struct {
 	Sched   *Scheduler
 	Picker  *PiecePicker
 	DiskMan *DiskManager
+
+	Seeding bool
 }
 
 func NewTorrent(file TorrentFile, ses *Session) *Torrent {
@@ -55,6 +57,7 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.Left = int64(pieceCount)
 	torrent.Downloaded = 0
 	torrent.Uploaded = 0
+	torrent.Seeding = false
 
 	totalSize := uint64(0)
 	if torrent.Info.FileMode() == multi {
@@ -137,39 +140,9 @@ func (t *Torrent) loop() {
 	}
 }
 
-// func (t *Torrent) RescheduleBlock(req BlockRequest, badPeer PeerID) {
-// 	t.Picker.removeBlock(req.Idx, req.Begin)
-// 	for pid, peer := range t.ActivePeers {
-// 		if peer.HasPiece(req.Idx) && pid != badPeer {
-// 			// fmt.Printf("RESCHEDULING BLOCK (%v:%v:%v) from %v to %v\n", req.Idx, req.Begin, req.Length, badPeer, pid)
-// 			peer.Request(req.Idx, req.Begin, req.Length)
-// 			return
-// 		}
-// 	}
-// }
-
 func (t *Torrent) Start() {
 	go t.loop()
 	t.SignalEvent(TorrentStarted{})
-
-	// go func() {
-	// 	ticker := time.NewTicker(time.Second * 5)
-	// 	for {
-	// 		select {
-	// 		case <-ticker.C:
-	// 			for pid, peer := range t.ActivePeers {
-	// 				// if !peer.State.AmChoked && len(peer.State.PendingRequests) == 0 {
-	// 				// 	panic(fmt.Errorf("client unchoked but not requesting from %v", pid))
-	// 				// }
-	// 				fmt.Printf("%v -> state: %v%v | pendingReqs: %v | seed: %v\n", pid,
-	// 					utils.BoolToInt(peer.State.AmChoked),
-	// 					utils.BoolToInt(peer.State.IsInteresting),
-	// 					len(peer.State.PendingRequests),
-	// 					peer.State.IsSeed)
-	// 			}
-	// 		}
-	// 	}
-	// }()
 }
 
 func (t *Torrent) Stop() {

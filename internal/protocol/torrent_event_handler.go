@@ -39,4 +39,11 @@ func (t *Torrent) handleTorrentStarted() {
 
 func (t *Torrent) handleTorrentFinished() {
 	fmt.Printf("TORRENT [%v] FINISHED IN %v\n", t.Info.Name, time.Now().Sub(t.Started).Truncate(time.Second))
+	t.Seeding = true
+	for pid, peer := range t.ActivePeers {
+		if peer.State.IsSeed {
+			t.SignalEvent(PeerRemoved{peer.Conn.Peer, Peer_redundant})
+			t.SignalEvent(PeerDisconnected{pid, Peer_redundant})
+		}
+	}
 }

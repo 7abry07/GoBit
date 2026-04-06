@@ -106,7 +106,7 @@ func (t *Torrent) handlePeerRemoved(e PeerRemoved) {
 	for i, val := range t.Swarm {
 		if val == e.Sender {
 			t.Swarm = append(t.Swarm[:i], t.Swarm[i+1:]...)
-			fmt.Printf("PEER REMOVED BECAUSE: %v\n", e.Cause)
+			// fmt.Printf("PEER REMOVED BECAUSE: %v\n", e.Cause)
 			return
 		}
 	}
