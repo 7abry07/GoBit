@@ -83,7 +83,7 @@ func (p *ActivePeer) Bitfield(bf bitset.BitSet) {
 func (p *ActivePeer) Request(idx, begin, length uint32) {
 	req := NewBlockRequest(p.Conn.torrent, p.Conn.Pid, idx, begin, length)
 
-	p.Conn.SendRequest(req)
+	p.Conn.SendRequest(idx, begin, length)
 	p.State.PendingRequests = append(p.State.PendingRequests, req)
 	go req.StartTimeout()
 
@@ -93,7 +93,6 @@ func (p *ActivePeer) Request(idx, begin, length uint32) {
 
 	p.Conn.torrent.Picker.setBlockState(idx, begin, BLOCK_REQUESTED)
 	p.Conn.torrent.Picker.setPieceState(idx, PIECE_DOWNLOADING)
-	p.Conn.torrent.Picker.blocksInFlight++
 }
 
 func (p *ActivePeer) Piece(idx, begin uint32, data []byte) {
@@ -101,15 +100,11 @@ func (p *ActivePeer) Piece(idx, begin uint32, data []byte) {
 }
 
 func (p *ActivePeer) Cancel(idx, begin, length uint32) {
-	timer := time.NewTimer(0)
-	<-timer.C
-	cancelReq := NewBlockRequest(nil, p.Conn.Pid, idx, begin, length)
-
 	for i, req := range p.State.PendingRequests {
-		if CompareRequests(req, cancelReq) {
+		if req.Idx == idx && req.Begin == begin && req.Length == length {
 			p.State.PendingRequests[i] = p.State.PendingRequests[len(p.State.PendingRequests)-1]
 			p.State.PendingRequests = p.State.PendingRequests[:len(p.State.PendingRequests)-1]
-			p.Conn.SendCancel(cancelReq)
+			p.Conn.SendCancel(idx, begin, length)
 			return
 		}
 	}
@@ -122,23 +117,6 @@ func (p *ActivePeer) FillOutstandingRequest() {
 	for len(p.State.PendingRequests) < 10 {
 		newIdx, begin, ok := p.Conn.torrent.Picker.Pick(*p.State)
 		if !ok {
-			//
-			//
-			// fmt.Println("NOTHING TO REQUEST")
-			// for i := range p.State.Pieces.EachSet() {
-			// 	if !p.Conn.torrent.bitfield.Test(i) {
-			// 		fmt.Printf("piece %v is %v [",
-			// 			i,
-			// 			p.Conn.torrent.Picker.pieces[i].state)
-			// 		for _, block := range p.Conn.torrent.Picker.pieces[i].blocks {
-			// 			fmt.Printf("%v", block.state)
-			// 		}
-			// 		fmt.Println("]")
-			// 	}
-			// }
-			// panic("")
-			//
-			//
 			return
 		}
 
@@ -150,7 +128,6 @@ func (p *ActivePeer) FillOutstandingRequest() {
 func (p *ActivePeer) ClearOutstandingRequests() {
 	for _, req := range p.State.PendingRequests {
 		p.Conn.torrent.SignalEvent(RescheduleBlock{p.Conn.Pid, req.Idx, req.Begin, req.Length})
-		// p.Conn.torrent.RescheduleBlock(req, p.Conn.Pid)
 		req.Received()
 	}
 	p.State.PendingRequests = nil

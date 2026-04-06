@@ -234,23 +234,23 @@ func (p *PeerConnection) SendBitfield(bf bitset.BitSet) {
 	p.out <- mess
 }
 
-func (p *PeerConnection) SendRequest(req BlockRequest) {
+func (p *PeerConnection) SendRequest(idx, begin, length uint32) {
 	mess := peerMessage{}
 	mess.Kind = Request
 	mess.Peer = p
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length)
 	p.out <- mess
 }
 
-func (p *PeerConnection) SendCancel(req BlockRequest) {
+func (p *PeerConnection) SendCancel(idx, begin, length uint32) {
 	mess := peerMessage{}
 	mess.Kind = Cancel
 	mess.Peer = p
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Idx)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Begin)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, req.Length)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length)
 	p.out <- mess
 }
 

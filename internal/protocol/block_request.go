@@ -18,7 +18,7 @@ type BlockRequest struct {
 
 func NewBlockRequest(torrent *Torrent, receiver PeerID, idx, begin, length uint32) BlockRequest {
 	return BlockRequest{
-		receiver, idx, begin, length, time.NewTimer(time.Second * 10), make(chan struct{}), torrent,
+		receiver, idx, begin, length, nil, make(chan struct{}), torrent,
 	}
 }
 
@@ -29,6 +29,7 @@ func CompareRequests(req1, req2 BlockRequest) bool {
 }
 
 func (r *BlockRequest) StartTimeout() {
+	r.timeout = time.NewTimer(time.Second * 10)
 	select {
 	case <-r.timeout.C:
 		// fmt.Println("FIRED")
