@@ -43,5 +43,6 @@ func (r *BlockRequest) StartTimeout() {
 }
 
 func (r *BlockRequest) Received() {
-	r.done <- struct{}{}
+	// r.done <- struct{}{}
+	close(r.done)
 }

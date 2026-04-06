@@ -100,35 +100,42 @@ func (p *ActivePeer) Piece(idx, begin uint32, data []byte) {
 }
 
 func (p *ActivePeer) Cancel(idx, begin, length uint32) {
-	for i, req := range p.State.PendingRequests {
-		if req.Idx == idx && req.Begin == begin && req.Length == length {
-			p.State.PendingRequests[i] = p.State.PendingRequests[len(p.State.PendingRequests)-1]
-			p.State.PendingRequests = p.State.PendingRequests[:len(p.State.PendingRequests)-1]
-			p.Conn.SendCancel(idx, begin, length)
-			return
-		}
+	ok := p.RemoveRequest(idx, begin, length)
+	if ok {
+		p.Conn.SendCancel(idx, begin, length)
 	}
 }
 
-func (p *ActivePeer) HasPiece(idx uint32) bool {
-	return p.State.Pieces.Test(uint(idx))
+func (p *ActivePeer) RemoveRequest(idx, begin, length uint32) bool {
+	for i, r := range p.State.PendingRequests {
+		if idx == r.Idx && begin == r.Begin && length == r.Length {
+			p.State.PendingRequests[i] = p.State.PendingRequests[len(p.State.PendingRequests)-1]
+			p.State.PendingRequests = p.State.PendingRequests[:len(p.State.PendingRequests)-1]
+			r.Received()
+			return true
+		}
+	}
+	return false
 }
+
 func (p *ActivePeer) FillOutstandingRequest() {
 	for len(p.State.PendingRequests) < 10 {
 		newIdx, begin, ok := p.Conn.torrent.Picker.Pick(*p.State)
 		if !ok {
 			return
 		}
-
-		p.Request(newIdx, begin,
-			p.Conn.torrent.Picker.GetBlockSize(newIdx, begin))
+		p.Request(newIdx, begin, p.Conn.torrent.Picker.GetBlockSize(newIdx, begin))
 	}
 }
 
 func (p *ActivePeer) ClearOutstandingRequests() {
 	for _, req := range p.State.PendingRequests {
+		p.RemoveRequest(req.Idx, req.Begin, req.Length)
 		p.Conn.torrent.SignalEvent(RescheduleBlock{p.Conn.Pid, req.Idx, req.Begin, req.Length})
-		req.Received()
 	}
 	p.State.PendingRequests = nil
+}
+
+func (p *ActivePeer) HasPiece(idx uint32) bool {
+	return p.State.Pieces.Test(uint(idx))
 }

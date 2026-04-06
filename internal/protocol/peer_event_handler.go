@@ -137,15 +137,10 @@ func (t *Torrent) handlePieceCompleted(e PieceCompleted) {
 func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
 	// fmt.Printf("REQUEST TIMEOUT -> %v [%v:%v:%v] \n", e.Req.To, e.Req.Idx, e.Req.Begin, e.Req.Length)
 	p, ok := t.ActivePeers[e.BadPeer]
-	// pieceIdx := e.Req.Idx
-	// blockOff := e.Req.Begin
 	if ok {
-		// p.Cancel(pieceIdx, blockOff, e.Req.Length)
 		p.Cancel(e.Idx, e.Begin, e.Length)
 	}
-
 	t.SignalEvent(RescheduleBlock{e.BadPeer, e.Idx, e.Begin, e.Length})
-	// t.RescheduleBlock(e.Req, e.Req.To)
 }
 
 func (t *Torrent) handleRescheduleBlock(e RescheduleBlock) {

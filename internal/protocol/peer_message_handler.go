@@ -102,24 +102,15 @@ func (t *Torrent) handlePeerPiece(e PeerPiece) {
 	if !ok {
 		return
 	}
+	ok = peer.RemoveRequest(e.Idx, e.Begin, uint32(len(e.Block)))
+	if !ok {
+		return
+	}
 
 	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin, e.Sender)
-	for i := len(peer.State.PendingRequests) - 1; i >= 0; i-- {
-		req := peer.State.PendingRequests[i]
-		if req.Begin == e.Begin && req.Idx == e.Idx {
-			peer.State.TotalUploaded += len(e.Block)
-
-			peer.State.PendingRequests[i] = peer.State.PendingRequests[len(peer.State.PendingRequests)-1]
-			peer.State.PendingRequests = peer.State.PendingRequests[:len(peer.State.PendingRequests)-1]
-			req.Received()
-
-			t.Picker.setBlockState(e.Idx, e.Begin, BLOCK_RECEIVED)
-			t.DiskMan.EnqueueJob(DiskWriteJob{
-				e.Idx, e.Begin, e.Block,
-			})
-			break
-		}
-	}
+	peer.State.TotalUploaded += len(e.Block)
+	t.Picker.setBlockState(e.Idx, e.Begin, BLOCK_RECEIVED)
+	t.DiskMan.EnqueueJob(DiskWriteJob{e.Idx, e.Begin, e.Block})
 	if !peer.State.AmChoked {
 		peer.FillOutstandingRequest()
 	}
