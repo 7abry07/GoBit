@@ -1,9 +1,10 @@
 package protocol
 
 import (
-	"github.com/bits-and-blooms/bitset"
 	"math"
 	"slices"
+
+	"github.com/bits-and-blooms/bitset"
 )
 
 type blockState uint8
@@ -49,9 +50,6 @@ type PiecePicker struct {
 
 	pieces []*pieceInfo
 
-	blocksInFlight  uint64
-	blocksRemaining uint64
-
 	pieceCount    uint32
 	pieceSize     uint32
 	blockSize     uint32
@@ -65,7 +63,6 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 	p := PiecePicker{}
 	p.pieces = make([]*pieceInfo, pieceCount)
 	p.pieceCount = pieceCount
-	p.blocksInFlight = 0
 	p.pieceSize = pieceSize
 	p.blockSize = blockSize
 	p.blockPerPiece = pieceSize / blockSize
@@ -74,7 +71,6 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 		p.lastPieceSize = pieceSize
 	}
 	p.lastBlockPerPiece = uint32(math.Ceil(float64(p.lastPieceSize) / float64(blockSize)))
-	p.blocksRemaining = uint64(pieceCount) * uint64(p.blockPerPiece)
 
 	p.torrent = t
 
