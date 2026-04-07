@@ -20,14 +20,14 @@ func (t *Torrent) handleTorrentStarted() {
 	if t.Info.AnnounceList != nil {
 		for _, lst := range t.Info.AnnounceList {
 			for _, trackerUrl := range lst {
-				announce, err := NewTracker(trackerUrl)
+				announce, err := NewTracker(t, trackerUrl)
 				if err == nil {
 					t.SignalEvent(TrackerAdded{announce})
 				}
 			}
 		}
 	} else {
-		announce, err := NewTracker(*t.Info.Announce)
+		announce, err := NewTracker(t, *t.Info.Announce)
 		if err == nil {
 			t.SignalEvent(TrackerAdded{announce})
 		}
@@ -38,7 +38,7 @@ func (t *Torrent) handleTorrentStarted() {
 }
 
 func (t *Torrent) handleTorrentFinished() {
-	fmt.Printf("TORRENT [%v] FINISHED IN %v\n", t.Info.Name, time.Now().Sub(t.Started).Truncate(time.Second))
+	fmt.Printf("TORRENT [%v] FINISHED IN %v\n", t.Info.Name, time.Since(t.Started).Truncate(time.Second))
 	t.Seeding = true
 	for pid, peer := range t.ActivePeers {
 		if peer.State.IsSeed {

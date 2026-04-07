@@ -69,7 +69,7 @@ func (req TrackerRequest) SerializeHttp(t Tracker) url.URL {
 			url.QueryEscape(strconv.Itoa(int(req.Numwant))),
 			url.QueryEscape(req.Ip.String()),
 			url.QueryEscape(strconv.Itoa(int(req.Key))),
-			url.QueryEscape(t.TrackerID),
+			"",
 		)
 
 		fullUrl.RawQuery = query

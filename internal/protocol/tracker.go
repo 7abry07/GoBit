@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,19 +9,22 @@ import (
 )
 
 type Tracker struct {
-	TrackerID  string
-	Announce   url.URL
-	Scrape     url.URL
+	torrent *Torrent
+
+	Announce url.URL
+	Scrape   url.URL
+
 	FailureCnt int
 }
 
-func NewTracker(announce url.URL) (*Tracker, error) {
+func NewTracker(torrent *Torrent, announce url.URL) (*Tracker, error) {
 	t := Tracker{}
 
 	if announce.Scheme != "http" {
 		return nil, Tracker_invalid_scheme_err
 	}
 
+	t.torrent = torrent
 	t.Announce = announce
 
 	scrapeUrlPath := strings.Replace(announce.Path, "announce", "scrape", 1)
@@ -32,12 +34,11 @@ func NewTracker(announce url.URL) (*Tracker, error) {
 		announce.Path = scrapeUrlPath
 		t.Scrape = announce
 	}
-	t.TrackerID = ""
 
 	return &t, nil
 }
 
-func (t *Tracker) SendAnnounce(ih [20]byte, d, u, l int64, event TrackerEventType, clientPid PeerID, port uint16) (TrackerResponse, error) {
+func (t *Tracker) SendAnnounce(ih [20]byte, d, u, l int64, event TrackerEventType, clientPid PeerID, port uint16) {
 	req := TrackerRequest{}
 	req.Compact = 1
 	req.Downloaded = d
@@ -51,41 +52,36 @@ func (t *Tracker) SendAnnounce(ih [20]byte, d, u, l int64, event TrackerEventTyp
 	req.PeerID = clientPid
 	req.Port = port
 
-	res, err := t.send(req)
-	if err != nil {
-		return TrackerResponse{}, errors.New("http/deserialization error in tracker response")
-	}
-	if res.Failure != nil {
-		return TrackerResponse{}, fmt.Errorf("tracker failure string -> %v", *res.Failure)
-	}
-	return res, nil
+	go t.send(req)
 }
 
-func (t *Tracker) send(req TrackerRequest) (TrackerResponse, error) {
+func (t *Tracker) SendScrape(ih [20]byte, d, u, l int64, event TrackerEventType, clientPid PeerID, port uint16) {
+}
+
+func (t *Tracker) send(req TrackerRequest) {
 	switch t.Announce.Scheme {
 	case "http":
 		{
 			fullUrl := req.SerializeHttp(*t)
 			httpResp, err := http.Get(fullUrl.String())
 			if err != nil {
-				return TrackerResponse{}, err
+				t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 			}
 			content, err := io.ReadAll(httpResp.Body)
 			if err != nil {
-				return TrackerResponse{}, err
+				t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 			}
 			resp, err := DeserializeTrackerResponseHttp(content, req)
 			if err != nil {
-				return TrackerResponse{}, err
+				t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 			}
-			if resp.trackerID != nil {
-				t.TrackerID = *resp.trackerID
+			if resp.Failure != nil {
+				t.torrent.SignalEvent(TrackerAnnounceFailed{t, fmt.Errorf("tracker failure string -> %v", *resp.Failure)})
 			}
-
-			return resp, nil
+			t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, resp})
 		}
 	case "udp":
-		return TrackerResponse{}, Tracker_invalid_scheme_err
+		panic(Tracker_invalid_scheme_err)
 	default:
 		panic(Tracker_invalid_scheme_err)
 	}

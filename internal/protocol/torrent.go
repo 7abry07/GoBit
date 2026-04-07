@@ -16,8 +16,8 @@ type Torrent struct {
 	Info    TorrentFile
 
 	ActivePeers map[PeerID]ActivePeer
-	Swarm       []*Peer
 	TrackerList []*Tracker
+	Swarm       []*Peer
 
 	optimisticUnchoke *PeerID
 
@@ -96,16 +96,16 @@ func (t *Torrent) loop() {
 				t.ActivePeers = nil
 				t.Picker = nil
 
-				for _, tracker := range t.TrackerList {
-					tracker.SendAnnounce(
-						t.Info.InfoHash,
-						t.Downloaded,
-						t.Uploaded,
-						t.Left,
-						TRACKER_STOPPED,
-						t.Ses.PeerID,
-						t.Ses.Port)
-				}
+				// for _, tracker := range t.TrackerList {
+				// 	tracker.SendAnnounce(
+				// 		t.Info.InfoHash,
+				// 		t.Downloaded,
+				// 		t.Uploaded,
+				// 		t.Left,
+				// 		TRACKER_STOPPED,
+				// 		t.Ses.PeerID,
+				// 		t.Ses.Port)
+				// }
 
 				t.TrackerList = nil
 				return

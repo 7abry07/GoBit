@@ -13,20 +13,12 @@ func (t *Torrent) handleTrackerTryAnnounce(tsk TrackerTryAnnounce) {
 	u := t.Uploaded
 	l := t.Left
 
-	go func() {
-		res, err := tsk.Tracker.SendAnnounce(
-			ih,
-			d,
-			u,
-			l,
-			tsk.Event,
-			t.Ses.PeerID,
-			t.Ses.Port)
-
-		if err != nil {
-			t.SignalEvent(TrackerAnnounceFailed{tsk.Tracker, err})
-		} else {
-			t.SignalEvent(TrackerAnnounceSuccessful{tsk.Tracker, res})
-		}
-	}()
+	tsk.Tracker.SendAnnounce(
+		ih,
+		d,
+		u,
+		l,
+		tsk.Event,
+		t.Ses.PeerID,
+		t.Ses.Port)
 }
