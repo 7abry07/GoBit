@@ -26,20 +26,20 @@ func (t *Torrent) handleTrackerAdded(e TrackerAdded) {
 		TrackerTryAnnounce{e.Sender, TRACKER_STARTED},
 		time.Now())
 
-	fmt.Printf("TRACKER ADDED -> [%v]\n", e.Sender.Announce.Host)
+	fmt.Printf("TRACKER ADDED -> [%v]\n", e.Sender.GetHost())
 }
 
 func (t *Torrent) handleTrackerRemoved(e TrackerRemoved) {
 	for i, val := range t.TrackerList {
 		if val == e.Sender {
 			t.TrackerList = append(t.TrackerList[:i], t.TrackerList[i+1:]...)
-			fmt.Printf("TRACKER REMOVED -> [%v] BECAUSE: %v\n", e.Sender.Announce.Host, e.Cause)
+			fmt.Printf("TRACKER REMOVED -> [%v] BECAUSE: %v\n", e.Sender.GetHost(), e.Cause)
 		}
 	}
 }
 
 func (t *Torrent) handleTrackerAnnounceSuccesful(e TrackerAnnounceSuccessful) {
-	fmt.Printf("ANNOUNCED -> [%v] NEXT IN %v\n", e.Sender.Announce.String(), time.Second*time.Duration(e.Response.Interval))
+	fmt.Printf("ANNOUNCED -> [%v] NEXT IN %v\n", e.Sender.GetHost(), time.Second*time.Duration(e.Response.Interval))
 
 	for _, entry := range e.Response.PeerList {
 		peer := NewPeer(entry.IpPort)
@@ -52,13 +52,13 @@ func (t *Torrent) handleTrackerAnnounceSuccesful(e TrackerAnnounceSuccessful) {
 }
 
 func (t *Torrent) handleTrackerAnnounceFailed(e TrackerAnnounceFailed) {
-	e.Sender.FailureCnt++
-	retryIn := (time.Minute) * time.Duration(math.Pow(2, float64(e.Sender.FailureCnt)))
+	e.Sender.Failure()
+	retryIn := (time.Minute) * time.Duration(math.Pow(2, float64(e.Sender.FailedCount())))
 	if retryIn > time.Hour*2 {
-		fmt.Printf("ANNOUNCE FAILED (dropping tracker) -> [%v] BECAUSE: %v\n", e.Sender.Announce.String(), e.Err)
+		fmt.Printf("ANNOUNCE FAILED (dropping tracker) -> [%v] BECAUSE: %v\n", e.Sender.GetHost(), e.Err)
 		t.SignalEvent(TrackerRemoved{e.Sender, e.Err})
 	} else {
-		fmt.Printf("ANNOUNCE FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.Announce.String(), e.Err)
+		fmt.Printf("ANNOUNCE FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.GetHost(), e.Err)
 		t.Sched.Schedule(
 			TrackerTryAnnounce{e.Sender, TRACKER_NONE},
 			time.Now().Add(retryIn))

@@ -16,7 +16,7 @@ type Torrent struct {
 	Info    TorrentFile
 
 	ActivePeers map[PeerID]ActivePeer
-	TrackerList []*Tracker
+	TrackerList []Tracker
 	Swarm       []*Peer
 
 	optimisticUnchoke *PeerID
@@ -44,7 +44,7 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	torrent.Info = file
 	torrent.Swarm = []*Peer{}
 	torrent.ActivePeers = make(map[PeerID]ActivePeer)
-	torrent.TrackerList = []*Tracker{}
+	torrent.TrackerList = []Tracker{}
 
 	torrent.optimisticUnchoke = nil
 

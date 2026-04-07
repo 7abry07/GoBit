@@ -20,16 +20,35 @@ func (t *Torrent) handleTorrentStarted() {
 	if t.Info.AnnounceList != nil {
 		for _, lst := range t.Info.AnnounceList {
 			for _, trackerUrl := range lst {
-				announce, err := NewTracker(t, trackerUrl)
-				if err == nil {
-					t.SignalEvent(TrackerAdded{announce})
+				switch trackerUrl.Scheme {
+				case "http":
+					{
+						http, err := NewHttpTracker(t, trackerUrl)
+						if err == nil {
+							t.SignalEvent(TrackerAdded{http})
+						}
+					}
+				case "udp":
+					{
+						// TODO
+					}
 				}
+
 			}
 		}
 	} else {
-		announce, err := NewTracker(t, *t.Info.Announce)
-		if err == nil {
-			t.SignalEvent(TrackerAdded{announce})
+		switch t.Info.Announce.Scheme {
+		case "http":
+			{
+				http, err := NewHttpTracker(t, *t.Info.Announce)
+				if err == nil {
+					t.SignalEvent(TrackerAdded{http})
+				}
+			}
+		case "udp":
+			{
+				// TODO
+			}
 		}
 	}
 

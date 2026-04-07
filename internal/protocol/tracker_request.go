@@ -38,10 +38,10 @@ type TrackerRequest struct {
 	Kind       TrackerRequestKind
 }
 
-func (req TrackerRequest) SerializeHttp(t Tracker) url.URL {
+func (req TrackerRequest) SerializeHttp(t HttpTracker) url.URL {
 	fullUrl := url.URL{}
 	if req.Kind == TrackerAnnounce {
-		fullUrl = t.Announce
+		fullUrl = t.announce
 		eventStr := []string{"none", "completed", "started", "stopped"}
 		query := fmt.Sprintf(
 			"info_hash=%v"+
@@ -74,7 +74,7 @@ func (req TrackerRequest) SerializeHttp(t Tracker) url.URL {
 
 		fullUrl.RawQuery = query
 	} else {
-		fullUrl = t.Scrape
+		fullUrl = t.scrape
 		fullUrl.RawQuery = fmt.Sprintf("info_hash=%v", url.QueryEscape(string(req.Infohash[:])))
 	}
 	return fullUrl

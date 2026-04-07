@@ -6,7 +6,7 @@ type TrackerTask interface {
 }
 
 type TrackerTryAnnounce struct {
-	Tracker *Tracker
+	Tracker Tracker
 	Event   TrackerEventType
 }
 

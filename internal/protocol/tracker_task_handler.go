@@ -8,17 +8,5 @@ func (t *Torrent) handleTrackerTask(tsk TrackerTask) {
 }
 
 func (t *Torrent) handleTrackerTryAnnounce(tsk TrackerTryAnnounce) {
-	ih := t.Info.InfoHash
-	d := t.Downloaded
-	u := t.Uploaded
-	l := t.Left
-
-	tsk.Tracker.SendAnnounce(
-		ih,
-		d,
-		u,
-		l,
-		tsk.Event,
-		t.Ses.PeerID,
-		t.Ses.Port)
+	tsk.Tracker.Announce(tsk.Event)
 }

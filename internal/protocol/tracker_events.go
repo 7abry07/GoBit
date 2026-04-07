@@ -6,21 +6,21 @@ type TrackerEvent interface {
 }
 
 type TrackerAdded struct {
-	Sender *Tracker
+	Sender Tracker
 }
 
 type TrackerRemoved struct {
-	Sender *Tracker
+	Sender Tracker
 	Cause  error
 }
 
 type TrackerAnnounceSuccessful struct {
-	Sender   *Tracker
+	Sender   Tracker
 	Response TrackerResponse
 }
 
 type TrackerAnnounceFailed struct {
-	Sender *Tracker
+	Sender Tracker
 	Err    error
 }
 
