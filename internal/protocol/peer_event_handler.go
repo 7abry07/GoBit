@@ -119,7 +119,7 @@ func (t *Torrent) handlePieceCompleted(e PieceCompleted) {
 	t.Downloaded++
 	t.Left--
 
-	fmt.Printf("PIECE COMPLETED -> %v [%v]\n", e.Idx, t.Downloaded)
+	fmt.Printf("PIECE COMPLETED -> %v [%v] [%v]\n", e.Idx, t.Downloaded, t.Picker.blocksToRequest)
 	for _, peer := range t.ActivePeers {
 		if t.Picker.CalculateInterested(t.bitfield, *peer.State) {
 			peer.SetInteresting()
@@ -144,6 +144,11 @@ func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
 }
 
 func (t *Torrent) handleRescheduleBlock(e RescheduleBlock) {
+
+	//
+	t.Picker.BlocksToRequestInc()
+	//
+
 	t.Picker.removeBlock(e.Idx, e.Begin)
 	for pid, peer := range t.ActivePeers {
 		if peer.HasPiece(e.Idx) && pid != e.BadPeer {

@@ -50,13 +50,16 @@ type PiecePicker struct {
 
 	pieces []*pieceInfo
 
-	pieceCount    uint32
-	pieceSize     uint32
-	blockSize     uint32
-	blockPerPiece uint32
+	pieceCount      uint32
+	pieceSize       uint32
+	blockSize       uint32
+	blockPerPiece   uint32
+	blocksToRequest uint64
 
 	lastPieceSize     uint32
 	lastBlockPerPiece uint32
+
+	endgame bool
 }
 
 func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSize uint32) *PiecePicker {
@@ -71,8 +74,10 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 		p.lastPieceSize = pieceSize
 	}
 	p.lastBlockPerPiece = uint32(math.Ceil(float64(p.lastPieceSize) / float64(blockSize)))
+	p.blocksToRequest = uint64((uint64((pieceCount - 1)) * uint64(p.blockPerPiece)) + uint64(p.lastBlockPerPiece))
 
 	p.torrent = t
+	p.endgame = false
 
 	for i, _ := range p.pieces {
 		p.pieces[i] = &pieceInfo{
@@ -87,7 +92,7 @@ func NewPiecePicker(t *Torrent, totalSize uint64, pieceCount, pieceSize, blockSi
 	return &p
 }
 
-func (p *PiecePicker) Pick(peer ActivePeerState) (uint32, uint32, bool) {
+func (p *PiecePicker) Pick(peer ActivePeerState) (uint32, uint32, uint32, bool) {
 	availablePieces := []*pieceInfo{}
 
 	for i := range peer.Pieces.EachSet() {
@@ -97,7 +102,7 @@ func (p *PiecePicker) Pick(peer ActivePeerState) (uint32, uint32, bool) {
 	}
 
 	if len(availablePieces) == 0 {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 
 	interestingPiece := availablePieces[0]
@@ -108,8 +113,11 @@ func (p *PiecePicker) Pick(peer ActivePeerState) (uint32, uint32, bool) {
 			interestingPiece = piece
 		}
 	}
+	idx := interestingPiece.idx
+	begin := p.getLowestFreeBlock(interestingPiece.idx)
+	length := p.GetBlockSize(idx, begin)
 
-	return interestingPiece.idx, p.getLowestFreeBlock(interestingPiece.idx), true
+	return idx, begin, length, true
 }
 
 func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) uint32 {
@@ -126,7 +134,9 @@ func (p *PiecePicker) getLowestFreeBlock(pieceIdx uint32) uint32 {
 	})
 
 	for i := range uint32(len(piece.blocks)) {
-		if i*p.blockSize != piece.blocks[i].off {
+		if p.endgame && piece.blocks[i].state == BLOCK_REQUESTED {
+			return i * p.blockSize
+		} else if i*p.blockSize != piece.blocks[i].off {
 			return i * p.blockSize
 		}
 	}
@@ -242,10 +252,21 @@ func (p *PiecePicker) PieceCanBeRequested(pieceIdx uint32) bool {
 	} else if piece.state == PIECE_COMPLETE {
 		return false
 	} else {
-		if uint32(len(piece.blocks)) == p.GetBlocksPerPiece(pieceIdx) {
+		if uint32(len(piece.blocks)) == p.GetBlocksPerPiece(pieceIdx) && !p.endgame {
 			return false
 		}
 		return true
+	}
+}
+
+func (p *PiecePicker) BlocksToRequestInc() {
+	p.blocksToRequest++
+}
+func (p *PiecePicker) BlocksToRequestDec() {
+	if p.blocksToRequest == 0 {
+		p.endgame = true
+	} else {
+		p.blocksToRequest--
 	}
 }
 

@@ -63,6 +63,7 @@ func (t *Torrent) handlePeerHave(e PeerHave) {
 		if t.Seeding {
 			t.SignalEvent(PeerRemoved{peer.Conn.Peer, Peer_redundant})
 			t.SignalEvent(PeerDisconnected{peer.Conn.Pid, Peer_redundant})
+			return
 		} else {
 			peer.State.IsSeed = true
 		}
@@ -88,6 +89,7 @@ func (t *Torrent) handlePeerBitfield(e PeerBitfield) {
 		if t.Seeding {
 			t.SignalEvent(PeerRemoved{peer.Conn.Peer, Peer_redundant})
 			t.SignalEvent(PeerDisconnected{peer.Conn.Pid, Peer_redundant})
+			return
 		} else {
 			peer.State.IsSeed = true
 		}
@@ -102,6 +104,11 @@ func (t *Torrent) handlePeerBitfield(e PeerBitfield) {
 
 func (t *Torrent) handlePeerRequest(e PeerRequest) {
 	fmt.Printf("REQUEST -> [%v]\n", e.Sender)
+	peer, ok := t.ActivePeers[e.Sender]
+	if !ok {
+		return
+	}
+	peer.State.IncomingRequests = append(peer.State.IncomingRequests, e)
 	t.DiskMan.EnqueueJob(DiskReadJob{
 		e.Sender, e.Idx, e.Begin, e.Length,
 	})
@@ -117,10 +124,17 @@ func (t *Torrent) handlePeerPiece(e PeerPiece) {
 		return
 	}
 
+	if t.Picker.endgame {
+		for _, peer := range t.ActivePeers {
+			peer.Cancel(e.Idx, e.Begin, uint32(len(e.Block)))
+		}
+	}
+
 	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin, e.Sender)
 	peer.State.TotalUploaded += len(e.Block)
 	t.Picker.setBlockState(e.Idx, e.Begin, BLOCK_RECEIVED)
 	t.DiskMan.EnqueueJob(DiskWriteJob{e.Idx, e.Begin, e.Block})
+
 	if !peer.State.AmChoked {
 		peer.FillOutstandingRequest()
 	}
@@ -128,5 +142,9 @@ func (t *Torrent) handlePeerPiece(e PeerPiece) {
 
 func (t *Torrent) handlePeerCancel(e PeerCancel) {
 	fmt.Printf("CANCEL (%v:%v-%v) -> [%v]\n", e.Sender, e.Idx, e.Begin, e.Length)
-	// TODO
+	peer, ok := t.ActivePeers[e.Sender]
+	if !ok {
+		return
+	}
+	peer.RemoveIncomingRequest(e.Idx, e.Begin, e.Length)
 }

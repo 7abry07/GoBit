@@ -22,7 +22,8 @@ type ActivePeerState struct {
 
 	Pieces *bitset.BitSet
 
-	PendingRequests []BlockRequest
+	PendingRequests  []BlockRequest
+	IncomingRequests []PeerRequest
 
 	IsChoked      bool
 	IsInteresting bool
@@ -93,6 +94,10 @@ func (p *ActivePeer) Request(idx, begin, length uint32) {
 
 	p.Conn.torrent.Picker.setBlockState(idx, begin, BLOCK_REQUESTED)
 	p.Conn.torrent.Picker.setPieceState(idx, PIECE_DOWNLOADING)
+
+	//
+	p.Conn.torrent.Picker.BlocksToRequestDec()
+	//
 }
 
 func (p *ActivePeer) Piece(idx, begin uint32, data []byte) {
@@ -118,13 +123,40 @@ func (p *ActivePeer) RemoveRequest(idx, begin, length uint32) bool {
 	return false
 }
 
+func (p *ActivePeer) RemoveIncomingRequest(idx, begin, length uint32) bool {
+	for i, r := range p.State.IncomingRequests {
+		if idx == r.Idx && begin == r.Begin && length == r.Length {
+			p.State.IncomingRequests[i] = p.State.IncomingRequests[len(p.State.IncomingRequests)-1]
+			p.State.IncomingRequests = p.State.IncomingRequests[:len(p.State.IncomingRequests)-1]
+			return true
+		}
+	}
+	return false
+}
+
+func (p *ActivePeer) RequestCanceled(idx, begin, length uint32) bool {
+	for _, r := range p.State.IncomingRequests {
+		if idx == r.Idx && begin == r.Begin && length == r.Length {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *ActivePeer) FillOutstandingRequest() {
 	for len(p.State.PendingRequests) < 10 {
-		newIdx, begin, ok := p.Conn.torrent.Picker.Pick(*p.State)
+		idx, begin, length, ok := p.Conn.torrent.Picker.Pick(*p.State)
 		if !ok {
 			return
 		}
-		p.Request(newIdx, begin, p.Conn.torrent.Picker.GetBlockSize(newIdx, begin))
+
+		for _, req := range p.State.PendingRequests {
+			if req.Idx == idx && req.Begin == begin && req.Length == length {
+				return
+			}
+		}
+
+		p.Request(idx, begin, length)
 	}
 }
 

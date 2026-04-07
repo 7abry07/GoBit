@@ -34,7 +34,7 @@ func (t *Torrent) handleDiskReadFinished(e DiskReadFinished) {
 	} else {
 		fmt.Printf("READ (%v:%v) FROM DISK\n", e.PieceIdx, e.BlockOff)
 		peer, ok := t.ActivePeers[e.RequestedFrom]
-		if !ok {
+		if !ok || !peer.RequestCanceled(e.PieceIdx, e.BlockOff, uint32(len(e.Data))) {
 			return
 		}
 		peer.Piece(e.PieceIdx, e.BlockOff, e.Data)
