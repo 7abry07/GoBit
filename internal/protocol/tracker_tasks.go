@@ -10,5 +10,11 @@ type TrackerTryAnnounce struct {
 	Event   TrackerEventType
 }
 
+type TrackerTryScrape struct {
+	Tracker Tracker
+}
+
 func (TrackerTryAnnounce) IsTask()        {}
 func (TrackerTryAnnounce) IsTrackerTask() {}
+func (TrackerTryScrape) IsTask()          {}
+func (TrackerTryScrape) IsTrackerTask()   {}

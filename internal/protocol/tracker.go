@@ -10,11 +10,6 @@ const (
 	TRACKER_STOPPED
 )
 
-const (
-	TrackerAnnounce TrackerRequestKind = iota
-	TrackerScrape
-)
-
 type Tracker interface {
 	Announce(TrackerEventType)
 	Scrape()

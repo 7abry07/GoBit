@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -22,7 +21,6 @@ type TrackerAnnounceRequest struct {
 	NoPID      uint8
 	Compact    uint8
 	Event      TrackerEventType
-	Kind       TrackerRequestKind
 }
 
 func (req TrackerAnnounceRequest) SerializeHttp(t HttpTracker) url.URL {
@@ -61,12 +59,11 @@ func (req TrackerAnnounceRequest) SerializeHttp(t HttpTracker) url.URL {
 	return fullUrl
 }
 
-func (req TrackerAnnounceRequest) SerializeUdp(t UdpTracker) []byte {
-	t.transactionId = rand.Uint32()
+func (req TrackerAnnounceRequest) SerializeUdp(t UdpTracker, transactionId uint32) []byte {
 	buf := []byte{}
 	buf = binary.BigEndian.AppendUint64(buf, t.connectionId)
 	buf = binary.BigEndian.AppendUint32(buf, uint32(ANNOUNCE))
-	buf = binary.BigEndian.AppendUint32(buf, t.transactionId)
+	buf = binary.BigEndian.AppendUint32(buf, transactionId)
 	buf = append(buf, t.torrent.Info.InfoHash[:]...)
 	buf = append(buf, t.torrent.Ses.PeerID[:]...)
 	buf = binary.BigEndian.AppendUint64(buf, t.torrent.Downloaded)

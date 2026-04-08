@@ -9,8 +9,14 @@ import (
 	"github.com/bits-and-blooms/bitset"
 	"io"
 	"net"
+	"net/netip"
 	"time"
 )
+
+type PeerEntry struct {
+	Pid    *PeerID
+	IpPort netip.AddrPort
+}
 
 type PeerConnection struct {
 	Pid    PeerID

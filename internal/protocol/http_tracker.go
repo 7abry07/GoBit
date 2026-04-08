@@ -24,7 +24,7 @@ type HttpTracker struct {
 func NewHttpTracker(torrent *Torrent, announce url.URL) (*HttpTracker, error) {
 	t := HttpTracker{}
 
-	if announce.Scheme != "http" {
+	if announce.Scheme != "http" && announce.Scheme != "https" {
 		return nil, Tracker_invalid_scheme_err
 	}
 
@@ -49,7 +49,6 @@ func (t *HttpTracker) Announce(event TrackerEventType) {
 	req.Uploaded = t.torrent.Uploaded
 	req.Event = event
 	req.Infohash = t.torrent.Info.InfoHash
-	req.Kind = TrackerAnnounce
 	req.Left = t.torrent.Left
 	req.NoPID = 1
 	req.Numwant = 200
@@ -60,7 +59,10 @@ func (t *HttpTracker) Announce(event TrackerEventType) {
 }
 
 func (t *HttpTracker) Scrape() {
-	// TODO
+	req := TrackerScrapeRequest{}
+	req.infohashes = append(req.infohashes, t.torrent.Info.InfoHash)
+
+	go t.sendScrape(req)
 }
 
 func (t *HttpTracker) Failure() {
@@ -73,6 +75,43 @@ func (t *HttpTracker) FailedCount() int {
 
 func (t *HttpTracker) GetHost() string {
 	return t.announce.Host
+}
+
+func (t *HttpTracker) sendScrape(req TrackerScrapeRequest) {
+	fullUrl := req.SerializeHttp(*t)
+
+	var err error
+	var httpResp *http.Response
+	retransmissions := float64(0)
+
+	for retransmissions < 8 {
+		client := http.Client{Timeout: time.Second * time.Duration(15*math.Pow(2, retransmissions))}
+		httpResp, err = client.Get(fullUrl.String())
+		if errors.Is(err, context.DeadlineExceeded) {
+			retransmissions++
+		} else {
+			retransmissions = 0
+			break
+		}
+	}
+
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+	content, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+	res := TrackerScrapeResponse{}
+	err = res.DeserializeHttp(t, content, req)
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+
+	t.torrent.SignalEvent(TrackerScrapeSuccessful{t, res})
 }
 
 func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
@@ -102,14 +141,15 @@ func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 		return
 	}
-	resp, err := DeserializeHttp(content, req)
+	res := TrackerAnnounceResponse{}
+	err = res.DeserializeHttp(content)
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 		return
 	}
-	if resp.Failure != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, fmt.Errorf("tracker failure string -> %v", *resp.Failure)})
+	if res.Failure != nil {
+		t.torrent.SignalEvent(TrackerAnnounceFailed{t, fmt.Errorf("tracker failure string -> %v", *res.Failure)})
 		return
 	}
-	t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, resp})
+	t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, res})
 }

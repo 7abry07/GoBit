@@ -24,11 +24,25 @@ type TrackerAnnounceFailed struct {
 	Err    error
 }
 
+type TrackerScrapeSuccessful struct {
+	Sender   Tracker
+	Response TrackerScrapeResponse
+}
+
+type TrackerScrapeFailed struct {
+	Sender Tracker
+	Err    error
+}
+
 func (TrackerAdded) IsEvent()                     {}
 func (TrackerRemoved) IsEvent()                   {}
 func (TrackerAnnounceFailed) IsEvent()            {}
+func (TrackerScrapeFailed) IsEvent()              {}
 func (TrackerAnnounceSuccessful) IsEvent()        {}
+func (TrackerScrapeSuccessful) IsEvent()          {}
 func (TrackerAdded) IsTrackerEvent()              {}
 func (TrackerRemoved) IsTrackerEvent()            {}
+func (TrackerScrapeFailed) IsTrackerEvent()       {}
 func (TrackerAnnounceFailed) IsTrackerEvent()     {}
 func (TrackerAnnounceSuccessful) IsTrackerEvent() {}
+func (TrackerScrapeSuccessful) IsTrackerEvent()   {}

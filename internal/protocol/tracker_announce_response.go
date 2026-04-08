@@ -7,11 +7,6 @@ import (
 	"net/netip"
 )
 
-type PeerEntry struct {
-	Pid    *PeerID
-	IpPort netip.AddrPort
-}
-
 type TrackerAnnounceResponse struct {
 	Failure     *string
 	Warning     *string
@@ -24,16 +19,15 @@ type TrackerAnnounceResponse struct {
 	PeerList    []PeerEntry
 }
 
-func DeserializeUdp(t *UdpTracker, udpResp []byte, packetLen int) (TrackerAnnounceResponse, error) {
-	res := TrackerAnnounceResponse{}
-	if packetLen < 20 {
-		return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+func (res *TrackerAnnounceResponse) DeserializeUdp(t *UdpTracker, udpResp []byte, packetLen int, transactionId uint32) error {
+	if packetLen < 8 {
+		return Tracker_invalid_resp_err
 	}
 
 	action := binary.BigEndian.Uint32(udpResp[0:4])
-	transactionId := binary.BigEndian.Uint32(udpResp[4:8])
-	if transactionId != t.transactionId {
-		return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+	respTransactionId := binary.BigEndian.Uint32(udpResp[4:8])
+	if transactionId != respTransactionId {
+		return Tracker_invalid_resp_err
 	}
 
 	switch byte(action) {
@@ -56,7 +50,7 @@ func DeserializeUdp(t *UdpTracker, udpResp []byte, packetLen int) (TrackerAnnoun
 
 				parsedIp, err := netip.ParseAddr(fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3]))
 				if err != nil {
-					return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+					return Tracker_invalid_resp_err
 				}
 
 				peerVal := PeerEntry{}
@@ -68,46 +62,45 @@ func DeserializeUdp(t *UdpTracker, udpResp []byte, packetLen int) (TrackerAnnoun
 		}
 	case byte(ERROR):
 		{
-			return TrackerAnnounceResponse{}, fmt.Errorf("error in tracker response: %v", udpResp[8:packetLen])
+			return fmt.Errorf("error in tracker response: %v", udpResp[8:packetLen])
 		}
 	default:
-		return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+		return Tracker_invalid_resp_err
 	}
 
-	return res, nil
+	return nil
 }
 
-func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnounceResponse, error) {
-	resp := TrackerAnnounceResponse{}
+func (res *TrackerAnnounceResponse) DeserializeHttp(httpResp []byte) error {
 	decoded, err := bencode.Decode(string(httpResp))
 	if err != nil {
-		return TrackerAnnounceResponse{}, err
+		return err
 	}
 	root, ok := decoded.Dict()
 	if !ok {
-		return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+		return Tracker_invalid_resp_err
 	}
 
 	interval, _ := root.FindIntOrDef("interval", 1800)
 	minInterval, _ := root.FindIntOrDef("min interval", 30)
-	resp.Interval = uint32(interval)
-	resp.MinInterval = uint32(minInterval)
+	res.Interval = uint32(interval)
+	res.MinInterval = uint32(minInterval)
 
 	warning, warningOk := root.FindStr("warning reason")
 	if warningOk {
 		str := string(warning)
-		resp.Warning = &str
+		res.Warning = &str
 	}
 	failure, failureOk := root.FindStr("failure reason")
 	if failureOk {
 		str := string(failure)
-		resp.Failure = &str
-		return resp, nil
+		res.Failure = &str
+		return nil
 	}
 	trackerId, trackeridOk := root.FindStr("tracker id")
 	if trackeridOk {
 		str := string(trackerId)
-		resp.trackerID = &str
+		res.trackerID = &str
 	}
 
 	// if req.Kind == TrackerScrape {
@@ -130,13 +123,13 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 	complete, _ := root.FindIntOrDef("complete", -1)
 	incomplete, _ := root.FindIntOrDef("incomplete", -1)
 	downloaded, _ := root.FindIntOrDef("downloaded", -1)
-	resp.Complete = int64(complete)
-	resp.Incomplete = int64(incomplete)
-	resp.Downloaded = int64(downloaded)
+	res.Complete = int64(complete)
+	res.Incomplete = int64(incomplete)
+	res.Downloaded = int64(downloaded)
 
 	peerList, ok := root.Find("peers")
 	if !ok {
-		return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+		return Tracker_invalid_resp_err
 	}
 
 	if peerList.Type() == bencode.List_t {
@@ -144,7 +137,7 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 		for _, peerNode := range peers {
 			p, ok := peerNode.Dict()
 			if !ok {
-				return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+				return Tracker_invalid_resp_err
 			}
 			pid, _ := p.FindStrOrDef("peer id", "")
 			ip, _ := p.FindStrOrDef("ip", "")
@@ -155,7 +148,7 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 			}
 			parsedIp, err := netip.ParseAddr(string(ip))
 			if err != nil {
-				return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+				return Tracker_invalid_resp_err
 			}
 
 			peerVal := PeerEntry{}
@@ -164,7 +157,7 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 				panic(err)
 			}
 			peerVal.IpPort = netip.AddrPortFrom(parsedIp, uint16(port))
-			resp.PeerList = append(resp.PeerList, peerVal)
+			res.PeerList = append(res.PeerList, peerVal)
 		}
 	} else if peerList.Type() == bencode.Str_t {
 		peersStr, _ := peerList.Str()
@@ -172,9 +165,9 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 
 		lst, ok := parseV4CompactPeers(peers)
 		if !ok {
-			return TrackerAnnounceResponse{}, Tracker_invalid_resp_err
+			return Tracker_invalid_resp_err
 		}
-		resp.PeerList = append(resp.PeerList, lst...)
+		res.PeerList = append(res.PeerList, lst...)
 	}
 
 	peer6List, ok := root.Find("peers6")
@@ -185,12 +178,12 @@ func DeserializeHttp(httpResp []byte, req TrackerAnnounceRequest) (TrackerAnnoun
 
 			lst, ok := parseV6CompactPeers(peers)
 			if ok {
-				resp.PeerList = append(resp.PeerList, lst...)
+				res.PeerList = append(res.PeerList, lst...)
 			}
 		}
 	}
 
-	return resp, nil
+	return nil
 }
 
 func parseV4CompactPeers(peers []byte) ([]PeerEntry, bool) {

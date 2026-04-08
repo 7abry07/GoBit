@@ -43,6 +43,8 @@ func (t *Torrent) handleTorrentStarted() {
 		}
 	} else {
 		switch t.Info.Announce.Scheme {
+		case "https":
+			fallthrough
 		case "http":
 			{
 				http, err := NewHttpTracker(t, *t.Info.Announce)

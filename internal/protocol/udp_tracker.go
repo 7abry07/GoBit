@@ -23,7 +23,7 @@ const (
 type UdpTracker struct {
 	lastConnIdRequested time.Time
 	connectionId        uint64
-	transactionId       uint32
+	// transactionId       uint32
 
 	addr *net.UDPAddr
 	sock *net.UDPConn
@@ -37,9 +37,13 @@ func NewUdpTracker(torrent *Torrent, url url.URL) (*UdpTracker, error) {
 	t := UdpTracker{}
 	t.lastConnIdRequested = time.Now()
 	t.connectionId = 0
-	t.transactionId = 0
-	t.name = url.Hostname()
+	// t.transactionId = 0
+	t.name = url.Host
 	t.torrent = torrent
+
+	if url.Scheme != "udp" {
+		return nil, Tracker_invalid_scheme_err
+	}
 
 	endpoint, err := net.ResolveUDPAddr("udp", url.Host)
 	if err != nil {
@@ -56,13 +60,11 @@ func NewUdpTracker(torrent *Torrent, url url.URL) (*UdpTracker, error) {
 }
 
 func (t *UdpTracker) Announce(event TrackerEventType) {
-
 	req := TrackerAnnounceRequest{}
 	req.Downloaded = t.torrent.Downloaded
 	req.Uploaded = t.torrent.Uploaded
 	req.Event = event
 	req.Infohash = t.torrent.Info.InfoHash
-	req.Kind = TrackerAnnounce
 	req.Left = t.torrent.Left
 	req.Numwant = 200
 	req.PeerID = t.torrent.Ses.PeerID
@@ -72,7 +74,10 @@ func (t *UdpTracker) Announce(event TrackerEventType) {
 }
 
 func (t *UdpTracker) Scrape() {
-	// TODO
+	req := TrackerScrapeRequest{}
+	req.infohashes = append(req.infohashes, t.torrent.Info.InfoHash)
+
+	go t.sendScrape(req)
 }
 
 func (t *UdpTracker) Failure() {
@@ -87,14 +92,58 @@ func (t *UdpTracker) GetHost() string {
 	return t.name
 }
 
-func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
+func (t *UdpTracker) sendScrape(req TrackerScrapeRequest) {
 	if t.connectionId == 0 || time.Since(t.lastConnIdRequested) > time.Minute {
 		if !t.connect() {
 			return
 		}
 	}
 
-	buf := req.SerializeUdp(*t)
+	transactionId := rand.Uint32()
+	buf := req.SerializeUdp(*t, transactionId)
+	err := utils.WriteFullUDP(t.sock, t.addr, buf)
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+
+	retransmissions := float64(0)
+	readBuf := make([]byte, 4096)
+	var packetLen int
+	for retransmissions < 8 {
+		t.sock.SetDeadline(time.Now().Add(time.Second * time.Duration(15*math.Pow(2, retransmissions))))
+		packetLen, _, err = t.sock.ReadFromUDP(readBuf)
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			retransmissions++
+		} else {
+			retransmissions = 0
+			break
+		}
+	}
+
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+	res := TrackerScrapeResponse{}
+	err = res.DeserializeUdp(t, req, readBuf, packetLen, transactionId)
+	if err != nil {
+		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		return
+	}
+
+	t.torrent.SignalEvent(TrackerScrapeSuccessful{t, res})
+}
+
+func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
+	if t.connectionId == 0 || time.Since(t.lastConnIdRequested) > time.Minute {
+		if !t.connect() {
+			return
+		}
+	}
+	transactionId := rand.Uint32()
+
+	buf := req.SerializeUdp(*t, transactionId)
 	err := utils.WriteFullUDP(t.sock, t.addr, buf)
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
@@ -119,8 +168,8 @@ func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 		return
 	}
-
-	res, err := DeserializeUdp(t, readBuf, packetLen)
+	res := TrackerAnnounceResponse{}
+	err = res.DeserializeUdp(t, readBuf, packetLen, transactionId)
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 		return
@@ -131,10 +180,10 @@ func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 
 func (t *UdpTracker) connect() bool {
 	buf := []byte{}
-	t.transactionId = rand.Uint32()
+	transactionId := rand.Uint32()
 	buf = binary.BigEndian.AppendUint64(buf, 0x41727101980)
 	buf = binary.BigEndian.AppendUint32(buf, uint32(CONNECT))
-	buf = binary.BigEndian.AppendUint32(buf, t.transactionId)
+	buf = binary.BigEndian.AppendUint32(buf, transactionId)
 
 	err := utils.WriteFullUDP(t.sock, t.addr, buf)
 	if err != nil {
@@ -167,8 +216,8 @@ func (t *UdpTracker) connect() bool {
 	}
 
 	action := binary.BigEndian.Uint32(readBuf[0:4])
-	transactionId := binary.BigEndian.Uint32(readBuf[4:8])
-	if transactionId != t.transactionId {
+	respTransactionId := binary.BigEndian.Uint32(readBuf[4:8])
+	if transactionId != respTransactionId {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
 		return false
 	}
