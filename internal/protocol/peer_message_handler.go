@@ -132,6 +132,8 @@ func (t *Torrent) handlePeerPiece(e PeerPiece) {
 
 	// fmt.Printf("PIECE (%v:%v) -> %v\n", e.Idx, e.Begin, e.Sender)
 	peer.State.TotalUploaded += len(e.Block)
+	t.Downloaded += uint64(len(e.Block))
+	t.Left -= uint64(len(e.Block))
 	t.Picker.setBlockState(e.Idx, e.Begin, BLOCK_RECEIVED)
 	t.DiskMan.EnqueueJob(DiskWriteJob{e.Idx, e.Begin, e.Block})
 

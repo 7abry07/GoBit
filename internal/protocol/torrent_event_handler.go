@@ -21,6 +21,8 @@ func (t *Torrent) handleTorrentStarted() {
 		for _, lst := range t.Info.AnnounceList {
 			for _, trackerUrl := range lst {
 				switch trackerUrl.Scheme {
+				case "https":
+					fallthrough
 				case "http":
 					{
 						http, err := NewHttpTracker(t, trackerUrl)
@@ -30,10 +32,13 @@ func (t *Torrent) handleTorrentStarted() {
 					}
 				case "udp":
 					{
+						udp, err := NewUdpTracker(t, trackerUrl)
+						if err == nil {
+							t.SignalEvent(TrackerAdded{udp})
+						}
 						// TODO
 					}
 				}
-
 			}
 		}
 	} else {
@@ -47,6 +52,10 @@ func (t *Torrent) handleTorrentStarted() {
 			}
 		case "udp":
 			{
+				udp, err := NewUdpTracker(t, *t.Info.Announce)
+				if err == nil {
+					t.SignalEvent(TrackerAdded{udp})
+				}
 				// TODO
 			}
 		}

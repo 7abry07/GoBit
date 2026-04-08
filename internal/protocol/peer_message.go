@@ -31,11 +31,11 @@ func fromNetwork(input []byte) (peerMessage, error) {
 		return peerMessage{}, Peer_bad_message_err
 	}
 
-	lengthBE := input[0:4]
-	lengthLE := make([]byte, 4)
-	binary.LittleEndian.PutUint32(lengthLE, binary.BigEndian.Uint32(lengthBE))
+	// length :=
+	// lengthBytes := make([]byte, 4)
+	// binary.BigEndian.PutUint32(lengthLE, binary.BigEndian.Uint32(input[0:4]))
 
-	length := binary.LittleEndian.Uint32(lengthLE)
+	length := binary.BigEndian.Uint32(input[0:4])
 
 	if len(input) < int(length)+4 {
 		return peerMessage{}, Peer_bad_message_err
@@ -61,7 +61,7 @@ func fromNetwork(input []byte) (peerMessage, error) {
 			}
 			mess.Kind = Have
 			pidx := binary.BigEndian.Uint32(input[5:])
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, pidx)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, pidx)
 		}
 	case Bitfield:
 		{
@@ -78,9 +78,9 @@ func fromNetwork(input []byte) (peerMessage, error) {
 			begin := binary.BigEndian.Uint32(input[9:13])
 			length_ := binary.BigEndian.Uint32(input[13:17])
 
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length_)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, length_)
 		}
 	case Piece:
 		{
@@ -96,8 +96,8 @@ func fromNetwork(input []byte) (peerMessage, error) {
 				return peerMessage{}, Peer_bad_message_err
 			}
 
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
 			mess.Payload = append(mess.Payload, block...)
 		}
 	case Cancel:
@@ -110,9 +110,9 @@ func fromNetwork(input []byte) (peerMessage, error) {
 			begin := binary.BigEndian.Uint32(input[9:13])
 			length_ := binary.BigEndian.Uint32(input[13:17])
 
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
-			mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length_)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
+			mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, length_)
 		}
 	}
 
@@ -150,7 +150,7 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 			if len(m.Payload) != 4 {
 				return []byte{}, Peer_bad_message_err
 			}
-			pidx := binary.LittleEndian.Uint32(m.Payload)
+			pidx := binary.BigEndian.Uint32(m.Payload)
 
 			content = binary.BigEndian.AppendUint32(content, pidx)
 		}
@@ -163,9 +163,9 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 			if len(m.Payload) != 12 {
 				return []byte{}, Peer_bad_message_err
 			}
-			idx := binary.LittleEndian.Uint32(m.Payload[:4])
-			begin := binary.LittleEndian.Uint32(m.Payload[4:8])
-			length := binary.LittleEndian.Uint32(m.Payload[8:12])
+			idx := binary.BigEndian.Uint32(m.Payload[:4])
+			begin := binary.BigEndian.Uint32(m.Payload[4:8])
+			length := binary.BigEndian.Uint32(m.Payload[8:12])
 
 			content = binary.BigEndian.AppendUint32(content, idx)
 			content = binary.BigEndian.AppendUint32(content, begin)
@@ -176,8 +176,8 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 			if len(m.Payload) < 8 {
 				return []byte{}, Peer_bad_message_err
 			}
-			idx := binary.LittleEndian.Uint32(m.Payload[:4])
-			begin := binary.LittleEndian.Uint32(m.Payload[4:8])
+			idx := binary.BigEndian.Uint32(m.Payload[:4])
+			begin := binary.BigEndian.Uint32(m.Payload[4:8])
 			block := m.Payload[8:]
 
 			if len(block)+8 != len(m.Payload) {
@@ -193,9 +193,9 @@ func (m peerMessage) ToNetwork() ([]byte, error) {
 			if len(m.Payload) != 12 {
 				return []byte{}, Peer_bad_message_err
 			}
-			idx := binary.LittleEndian.Uint32(m.Payload[:4])
-			begin := binary.LittleEndian.Uint32(m.Payload[4:8])
-			length := binary.LittleEndian.Uint32(m.Payload[8:12])
+			idx := binary.BigEndian.Uint32(m.Payload[:4])
+			begin := binary.BigEndian.Uint32(m.Payload[4:8])
+			length := binary.BigEndian.Uint32(m.Payload[8:12])
 
 			content = binary.BigEndian.AppendUint32(content, idx)
 			content = binary.BigEndian.AppendUint32(content, begin)

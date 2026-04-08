@@ -19,6 +19,18 @@ func WriteFull(conn net.Conn, content []byte) error {
 	return nil
 }
 
+func WriteFullUDP(conn *net.UDPConn, addr *net.UDPAddr, data []byte) error {
+	total := 0
+	for total < len(data) {
+		n, err := conn.Write(data[total:])
+		if err != nil {
+			return err
+		}
+		total += n
+	}
+	return nil
+}
+
 func GenerateRandomPeerId() [20]byte {
 	pid := []byte{}
 	pid = append(pid, []byte("-GB0001-")...)

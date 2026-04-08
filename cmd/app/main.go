@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	name := "debian"
+	name := "one_piece"
 	file := protocol.TorrentFile{}
 
 	file, err := protocol.ParseTorrentFile("internal/tests/protocol/test_files/" + name + ".torrent")

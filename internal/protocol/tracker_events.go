@@ -16,7 +16,7 @@ type TrackerRemoved struct {
 
 type TrackerAnnounceSuccessful struct {
 	Sender   Tracker
-	Response TrackerResponse
+	Response TrackerAnnounceResponse
 }
 
 type TrackerAnnounceFailed struct {

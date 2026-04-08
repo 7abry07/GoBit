@@ -25,9 +25,9 @@ type Torrent struct {
 	tasks  chan Task
 
 	bitfield   bitset.BitSet
-	Downloaded int64
-	Uploaded   int64
-	Left       int64
+	Downloaded uint64
+	Uploaded   uint64
+	Left       uint64
 
 	Ses     *Session
 	Sched   *Scheduler
@@ -54,7 +54,6 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	pieceCount := len(torrent.Info.Pieces) / 20
 
 	torrent.bitfield = *bitset.New(uint(pieceCount))
-	torrent.Left = int64(pieceCount)
 	torrent.Downloaded = 0
 	torrent.Uploaded = 0
 	torrent.Seeding = false
@@ -67,6 +66,7 @@ func NewTorrent(file TorrentFile, ses *Session) *Torrent {
 	} else {
 		totalSize = *torrent.Info.Length
 	}
+	torrent.Left = totalSize
 
 	torrent.DiskMan = NewDiskManager(&torrent, totalSize, uint32(pieceCount), torrent.Info.PieceSize, torrent.Info.BlockSize)
 	torrent.Picker = NewPiecePicker(&torrent, totalSize, uint32(pieceCount), torrent.Info.PieceSize, torrent.Info.BlockSize)
@@ -96,16 +96,9 @@ func (t *Torrent) loop() {
 				t.ActivePeers = nil
 				t.Picker = nil
 
-				// for _, tracker := range t.TrackerList {
-				// 	tracker.SendAnnounce(
-				// 		t.Info.InfoHash,
-				// 		t.Downloaded,
-				// 		t.Uploaded,
-				// 		t.Left,
-				// 		TRACKER_STOPPED,
-				// 		t.Ses.PeerID,
-				// 		t.Ses.Port)
-				// }
+				for _, tracker := range t.TrackerList {
+					tracker.Announce(TRACKER_STOPPED)
+				}
 
 				t.TrackerList = nil
 				return

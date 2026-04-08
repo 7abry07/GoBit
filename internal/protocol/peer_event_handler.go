@@ -116,10 +116,8 @@ func (t *Torrent) handlePieceCompleted(e PieceCompleted) {
 	t.Picker.setPieceState(e.Idx, PIECE_COMPLETE)
 	t.Picker.deletePieceBlockData(e.Idx)
 	t.bitfield.Set(uint(e.Idx))
-	t.Downloaded++
-	t.Left--
 
-	fmt.Printf("PIECE COMPLETED -> %v [%v] [%v]\n", e.Idx, t.Downloaded, t.Picker.blocksToRequest)
+	fmt.Printf("PIECE COMPLETED -> %v [completed: %v] [%v : %v]\n", e.Idx, t.bitfield.Count(), t.Downloaded, t.Left)
 	for _, peer := range t.ActivePeers {
 		if t.Picker.CalculateInterested(t.bitfield, *peer.State) {
 			peer.SetInteresting()
@@ -144,10 +142,7 @@ func (t *Torrent) handleRequestTimeout(e RequestTimeout) {
 }
 
 func (t *Torrent) handleRescheduleBlock(e RescheduleBlock) {
-
-	//
 	t.Picker.BlocksToRequestInc()
-	//
 
 	t.Picker.removeBlock(e.Idx, e.Begin)
 	for pid, peer := range t.ActivePeers {

@@ -106,37 +106,6 @@ func (p *PeerConnection) writeLoop() {
 	}
 }
 
-func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (*Torrent, error) {
-	pid, ih, err := receiveHandshake(c.conn)
-	if err != nil {
-		return nil, Peer_bad_handshake_err
-	}
-
-	torrent, ok := torrents[ih]
-	if !ok {
-		return nil, Peer_bad_handshake_err
-	}
-
-	err = sendHandshake(c.conn, ih, clientPid)
-
-	if err != nil {
-		return nil, err
-	}
-
-	c.Pid = pid
-	return torrent, nil
-}
-
-func (p *PeerConnection) start() {
-	p.keepAlivePeer = time.NewTimer(p.peerTimeout)
-	go p.loop()
-}
-
-func (c *PeerConnection) attachTorrent(t *Torrent) {
-	c.ctx, c.cancel = context.WithCancelCause(t.ctx)
-	c.torrent = t
-}
-
 func (p *PeerConnection) receiveLoop() {
 	for {
 		select {
@@ -171,6 +140,37 @@ func (p *PeerConnection) receiveLoop() {
 			p.in <- mess
 		}
 	}
+}
+
+func (c *PeerConnection) handshakeIncomingPeer(torrents map[[20]byte]*Torrent, clientPid PeerID) (*Torrent, error) {
+	pid, ih, err := receiveHandshake(c.conn)
+	if err != nil {
+		return nil, Peer_bad_handshake_err
+	}
+
+	torrent, ok := torrents[ih]
+	if !ok {
+		return nil, Peer_bad_handshake_err
+	}
+
+	err = sendHandshake(c.conn, ih, clientPid)
+
+	if err != nil {
+		return nil, err
+	}
+
+	c.Pid = pid
+	return torrent, nil
+}
+
+func (p *PeerConnection) start() {
+	p.keepAlivePeer = time.NewTimer(p.peerTimeout)
+	go p.loop()
+}
+
+func (c *PeerConnection) attachTorrent(t *Torrent) {
+	c.ctx, c.cancel = context.WithCancelCause(t.ctx)
+	c.torrent = t
 }
 
 func (p *PeerConnection) SendKeepAlive() {
@@ -211,8 +211,8 @@ func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
 	mess := peerMessage{}
 	mess.Kind = Piece
 	mess.Peer = p
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
 	mess.Payload = append(mess.Payload, block...)
 	p.out <- mess
 }
@@ -220,7 +220,7 @@ func (p *PeerConnection) SendBlock(idx, begin uint32, block []byte) {
 func (p *PeerConnection) SendHave(idx uint32) {
 	mess := peerMessage{}
 	mess.Kind = Have
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
 	mess.Peer = p
 	p.out <- mess
 }
@@ -238,9 +238,9 @@ func (p *PeerConnection) SendRequest(idx, begin, length uint32) {
 	mess := peerMessage{}
 	mess.Kind = Request
 	mess.Peer = p
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, length)
 	p.out <- mess
 }
 
@@ -248,9 +248,9 @@ func (p *PeerConnection) SendCancel(idx, begin, length uint32) {
 	mess := peerMessage{}
 	mess.Kind = Cancel
 	mess.Peer = p
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, idx)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, begin)
-	mess.Payload = binary.LittleEndian.AppendUint32(mess.Payload, length)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, idx)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, begin)
+	mess.Payload = binary.BigEndian.AppendUint32(mess.Payload, length)
 	p.out <- mess
 }
 
@@ -359,7 +359,7 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 			return
 		}
 
-		idx := binary.LittleEndian.Uint32(mess.Payload)
+		idx := binary.BigEndian.Uint32(mess.Payload)
 		p.torrent.SignalEvent(PeerHave{p.Pid, idx})
 	case Bitfield:
 		if p.bitfieldSent {
@@ -376,9 +376,9 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 			return
 		}
 
-		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
-		length := binary.LittleEndian.Uint32(mess.Payload[8:])
+		idx := binary.BigEndian.Uint32(mess.Payload[:4])
+		begin := binary.BigEndian.Uint32(mess.Payload[4:8])
+		length := binary.BigEndian.Uint32(mess.Payload[8:])
 
 		if length > p.torrent.Info.BlockSize {
 			p.cancel(Peer_request_too_large)
@@ -389,8 +389,8 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 			p.cancel(fmt.Errorf("%v (piece)", Peer_bad_message_err))
 			return
 		}
-		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
+		idx := binary.BigEndian.Uint32(mess.Payload[:4])
+		begin := binary.BigEndian.Uint32(mess.Payload[4:8])
 		block := mess.Payload[8:]
 		p.torrent.SignalEvent(PeerPiece{p.Pid, idx, begin, block})
 	case Cancel:
@@ -398,9 +398,9 @@ func (p *PeerConnection) handleMessage(mess peerMessage) {
 			p.cancel(fmt.Errorf("%v (cancel)", Peer_bad_message_err))
 			return
 		}
-		idx := binary.LittleEndian.Uint32(mess.Payload[:4])
-		begin := binary.LittleEndian.Uint32(mess.Payload[4:8])
-		length := binary.LittleEndian.Uint32(mess.Payload[8:])
+		idx := binary.BigEndian.Uint32(mess.Payload[:4])
+		begin := binary.BigEndian.Uint32(mess.Payload[4:8])
+		length := binary.BigEndian.Uint32(mess.Payload[8:])
 		p.torrent.SignalEvent(PeerCancel{p.Pid, idx, begin, length})
 	default:
 		p.cancel(Peer_unrecognized_mess_err)

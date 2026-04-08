@@ -1,11 +1,15 @@
 package protocol
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type HttpTracker struct {
@@ -39,7 +43,7 @@ func NewHttpTracker(torrent *Torrent, announce url.URL) (*HttpTracker, error) {
 }
 
 func (t *HttpTracker) Announce(event TrackerEventType) {
-	req := TrackerRequest{}
+	req := TrackerAnnounceRequest{}
 	req.Compact = 1
 	req.Downloaded = t.torrent.Downloaded
 	req.Uploaded = t.torrent.Uploaded
@@ -52,7 +56,7 @@ func (t *HttpTracker) Announce(event TrackerEventType) {
 	req.PeerID = t.torrent.Ses.PeerID
 	req.Port = t.torrent.Ses.Port
 
-	go t.send(req)
+	go t.sendAnnounce(req)
 }
 
 func (t *HttpTracker) Scrape() {
@@ -71,22 +75,41 @@ func (t *HttpTracker) GetHost() string {
 	return t.announce.Host
 }
 
-func (t *HttpTracker) send(req TrackerRequest) {
+func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 	fullUrl := req.SerializeHttp(*t)
-	httpResp, err := http.Get(fullUrl.String())
+
+	var err error
+	var httpResp *http.Response
+	retransmissions := float64(0)
+
+	for retransmissions < 8 {
+		client := http.Client{Timeout: time.Second * time.Duration(15*math.Pow(2, retransmissions))}
+		httpResp, err = client.Get(fullUrl.String())
+		if errors.Is(err, context.DeadlineExceeded) {
+			retransmissions++
+		} else {
+			retransmissions = 0
+			break
+		}
+	}
+
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		return
 	}
 	content, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		return
 	}
-	resp, err := DeserializeTrackerResponseHttp(content, req)
+	resp, err := DeserializeHttp(content, req)
 	if err != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		return
 	}
 	if resp.Failure != nil {
 		t.torrent.SignalEvent(TrackerAnnounceFailed{t, fmt.Errorf("tracker failure string -> %v", *resp.Failure)})
+		return
 	}
 	t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, resp})
 }

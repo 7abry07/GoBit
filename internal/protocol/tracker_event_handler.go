@@ -33,7 +33,7 @@ func (t *Torrent) handleTrackerRemoved(e TrackerRemoved) {
 	for i, val := range t.TrackerList {
 		if val == e.Sender {
 			t.TrackerList = append(t.TrackerList[:i], t.TrackerList[i+1:]...)
-			fmt.Printf("TRACKER REMOVED -> [%v] BECAUSE: %v\n", e.Sender.GetHost(), e.Cause)
+			fmt.Printf("TRACKER REMOVED -> [%v] %v\n", e.Sender.GetHost(), e.Cause)
 		}
 	}
 }
@@ -53,12 +53,12 @@ func (t *Torrent) handleTrackerAnnounceSuccesful(e TrackerAnnounceSuccessful) {
 
 func (t *Torrent) handleTrackerAnnounceFailed(e TrackerAnnounceFailed) {
 	e.Sender.Failure()
-	retryIn := (time.Minute) * time.Duration(math.Pow(2, float64(e.Sender.FailedCount())))
+	retryIn := time.Second * time.Duration(15*math.Pow(2, float64(e.Sender.FailedCount())))
 	if retryIn > time.Hour*2 {
 		fmt.Printf("ANNOUNCE FAILED (dropping tracker) -> [%v] BECAUSE: %v\n", e.Sender.GetHost(), e.Err)
 		t.SignalEvent(TrackerRemoved{e.Sender, e.Err})
 	} else {
-		fmt.Printf("ANNOUNCE FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.GetHost(), e.Err)
+		// fmt.Printf("ANNOUNCE FAILED (retry in %v) -> [%v] BECAUSE: %v\n", retryIn, e.Sender.GetHost(), e.Err)
 		t.Sched.Schedule(
 			TrackerTryAnnounce{e.Sender, TRACKER_NONE},
 			time.Now().Add(retryIn))
