@@ -23,7 +23,7 @@ type TrackerAnnounceRequest struct {
 	Event      TrackerEventType
 }
 
-func (req TrackerAnnounceRequest) SerializeHttp(t HttpTracker) url.URL {
+func (req TrackerAnnounceRequest) SerializeHttp(t *HttpTracker) url.URL {
 	fullUrl := t.announce
 	eventStr := []string{"none", "completed", "started", "stopped"}
 	query := fmt.Sprintf(
@@ -59,7 +59,7 @@ func (req TrackerAnnounceRequest) SerializeHttp(t HttpTracker) url.URL {
 	return fullUrl
 }
 
-func (req TrackerAnnounceRequest) SerializeUdp(t UdpTracker, transactionId uint32) []byte {
+func (req TrackerAnnounceRequest) SerializeUdp(t *UdpTracker, transactionId uint32) []byte {
 	buf := []byte{}
 	buf = binary.BigEndian.AppendUint64(buf, t.connectionId)
 	buf = binary.BigEndian.AppendUint32(buf, uint32(ANNOUNCE))

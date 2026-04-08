@@ -10,7 +10,7 @@ type TrackerScrapeRequest struct {
 	infohashes [][20]byte
 }
 
-func (req TrackerScrapeRequest) SerializeHttp(t HttpTracker) url.URL {
+func (req TrackerScrapeRequest) SerializeHttp(t *HttpTracker) url.URL {
 	fullUrl := t.scrape
 	query := strings.Builder{}
 
@@ -25,7 +25,7 @@ func (req TrackerScrapeRequest) SerializeHttp(t HttpTracker) url.URL {
 	return fullUrl
 }
 
-func (req TrackerScrapeRequest) SerializeUdp(t UdpTracker, transactionId uint32) []byte {
+func (req TrackerScrapeRequest) SerializeUdp(t *UdpTracker, transactionId uint32) []byte {
 	buf := []byte{}
 	buf = binary.BigEndian.AppendUint64(buf, t.connectionId)
 	buf = binary.BigEndian.AppendUint32(buf, uint32(SCRAPE))

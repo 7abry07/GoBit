@@ -65,8 +65,14 @@ func (t *HttpTracker) Scrape() {
 	go t.sendScrape(req)
 }
 
+func (t *HttpTracker) Stop() {}
+
 func (t *HttpTracker) Failure() {
 	t.failureCnt++
+}
+
+func (t *HttpTracker) ResetFailure() {
+	t.failureCnt = 0
 }
 
 func (t *HttpTracker) FailedCount() int {
@@ -78,7 +84,7 @@ func (t *HttpTracker) GetHost() string {
 }
 
 func (t *HttpTracker) sendScrape(req TrackerScrapeRequest) {
-	fullUrl := req.SerializeHttp(*t)
+	fullUrl := req.SerializeHttp(t)
 
 	var err error
 	var httpResp *http.Response
@@ -115,7 +121,7 @@ func (t *HttpTracker) sendScrape(req TrackerScrapeRequest) {
 }
 
 func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
-	fullUrl := req.SerializeHttp(*t)
+	fullUrl := req.SerializeHttp(t)
 
 	var err error
 	var httpResp *http.Response

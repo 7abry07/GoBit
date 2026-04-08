@@ -25,21 +25,16 @@ func (t *Torrent) handleTrackerEvent(e TrackerEvent) {
 
 func (t *Torrent) handleTrackerAdded(e TrackerAdded) {
 	t.TrackerList = append(t.TrackerList, e.Sender)
-
 	t.Sched.Schedule(TrackerTryAnnounce{e.Sender, TRACKER_STARTED}, time.Now())
-
-	//
-	t.Sched.Schedule(TrackerTryScrape{e.Sender}, time.Now())
-	//
-
 	fmt.Printf("TRACKER ADDED -> [%v]\n", e.Sender.GetHost())
 }
 
 func (t *Torrent) handleTrackerRemoved(e TrackerRemoved) {
-	for i, val := range t.TrackerList {
-		if val == e.Sender {
+	for i, tracker := range t.TrackerList {
+		if tracker == e.Sender {
 			t.TrackerList = append(t.TrackerList[:i], t.TrackerList[i+1:]...)
 			fmt.Printf("TRACKER REMOVED -> [%v] %v\n", e.Sender.GetHost(), e.Cause)
+			tracker.Stop()
 		}
 	}
 }
@@ -71,11 +66,5 @@ func (t *Torrent) handleTrackerAnnounceFailed(e TrackerAnnounceFailed) {
 	}
 }
 
-func (t *Torrent) handleTrackerScrapeSuccessful(e TrackerScrapeSuccessful) {
-	stats := e.Response.Stats[t.Info.InfoHash]
-	fmt.Printf("scrape -> %v : %v : %v\n", stats.Complete, stats.Incomplete, stats.Complete)
-}
-
-func (t *Torrent) handleTrackerScrapeFailed(e TrackerScrapeFailed) {
-	fmt.Printf("scrape failed -> %v\n", e.Err)
-}
+func (t *Torrent) handleTrackerScrapeSuccessful(e TrackerScrapeSuccessful) {}
+func (t *Torrent) handleTrackerScrapeFailed(e TrackerScrapeFailed)         {}

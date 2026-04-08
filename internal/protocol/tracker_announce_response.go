@@ -19,17 +19,8 @@ type TrackerAnnounceResponse struct {
 	PeerList    []PeerEntry
 }
 
-func (res *TrackerAnnounceResponse) DeserializeUdp(t *UdpTracker, udpResp []byte, packetLen int, transactionId uint32) error {
-	if packetLen < 8 {
-		return Tracker_invalid_resp_err
-	}
-
+func (res *TrackerAnnounceResponse) DeserializeUdp(t *UdpTracker, udpResp []byte) error {
 	action := binary.BigEndian.Uint32(udpResp[0:4])
-	respTransactionId := binary.BigEndian.Uint32(udpResp[4:8])
-	if transactionId != respTransactionId {
-		return Tracker_invalid_resp_err
-	}
-
 	switch byte(action) {
 	case byte(ANNOUNCE):
 		{
@@ -42,7 +33,7 @@ func (res *TrackerAnnounceResponse) DeserializeUdp(t *UdpTracker, udpResp []byte
 			res.Complete = int64(seeders)
 
 			peerList := []PeerEntry{}
-			peerCnt := (packetLen - 20) / 6
+			peerCnt := (len(udpResp) - 20) / 6
 			udpResp = udpResp[20:]
 			for range peerCnt {
 				ip := udpResp[0:4]
@@ -62,7 +53,7 @@ func (res *TrackerAnnounceResponse) DeserializeUdp(t *UdpTracker, udpResp []byte
 		}
 	case byte(ERROR):
 		{
-			return fmt.Errorf("error in tracker response: %v", udpResp[8:packetLen])
+			return fmt.Errorf("error in tracker response: %v", udpResp[8:])
 		}
 	default:
 		return Tracker_invalid_resp_err

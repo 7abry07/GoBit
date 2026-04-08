@@ -16,21 +16,14 @@ type TrackerScrapeResponse struct {
 	Stats map[[20]byte]TorrentStats
 }
 
-func (res *TrackerScrapeResponse) DeserializeUdp(t *UdpTracker, req TrackerScrapeRequest, udpResp []byte, packetLen int, transactionId uint32) error {
-	if packetLen < 8 {
-		return Tracker_invalid_resp_err
-	}
-
+func (res *TrackerScrapeResponse) DeserializeUdp(t *UdpTracker, req TrackerScrapeRequest, udpResp []byte) error {
+	res.Stats = make(map[[20]byte]TorrentStats)
 	action := binary.BigEndian.Uint32(udpResp[0:4])
-	respTransactionId := binary.BigEndian.Uint32(udpResp[4:8])
-	if transactionId != respTransactionId {
-		return Tracker_invalid_resp_err
-	}
 
 	switch byte(action) {
 	case byte(SCRAPE):
 		{
-			if (packetLen-8)%96 != len(req.infohashes) {
+			if (len(udpResp)-8)/12 != len(req.infohashes) {
 				return Tracker_invalid_resp_err
 			}
 
@@ -50,7 +43,7 @@ func (res *TrackerScrapeResponse) DeserializeUdp(t *UdpTracker, req TrackerScrap
 		}
 	case byte(ERROR):
 		{
-			return fmt.Errorf("error in tracker response: %v", udpResp[8:packetLen])
+			return fmt.Errorf("error in tracker response: %v", string(udpResp[8:]))
 		}
 	default:
 		return Tracker_invalid_resp_err

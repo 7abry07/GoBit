@@ -13,7 +13,9 @@ const (
 type Tracker interface {
 	Announce(TrackerEventType)
 	Scrape()
+	Stop()
 	Failure()
+	ResetFailure()
 	FailedCount() int
 	GetHost() string
 }
