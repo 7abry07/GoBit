@@ -14,35 +14,23 @@ type TrackerRemoved struct {
 	Cause  error
 }
 
-type TrackerAnnounceSuccessful struct {
+type TrackerAnnounced struct {
 	Sender   Tracker
 	Response TrackerAnnounceResponse
+	Err      error
 }
 
-type TrackerAnnounceFailed struct {
-	Sender Tracker
-	Err    error
-}
-
-type TrackerScrapeSuccessful struct {
+type TrackerScraped struct {
 	Sender   Tracker
 	Response TrackerScrapeResponse
+	Err      error
 }
 
-type TrackerScrapeFailed struct {
-	Sender Tracker
-	Err    error
-}
-
-func (TrackerAdded) IsEvent()                     {}
-func (TrackerRemoved) IsEvent()                   {}
-func (TrackerAnnounceFailed) IsEvent()            {}
-func (TrackerScrapeFailed) IsEvent()              {}
-func (TrackerAnnounceSuccessful) IsEvent()        {}
-func (TrackerScrapeSuccessful) IsEvent()          {}
-func (TrackerAdded) IsTrackerEvent()              {}
-func (TrackerRemoved) IsTrackerEvent()            {}
-func (TrackerScrapeFailed) IsTrackerEvent()       {}
-func (TrackerAnnounceFailed) IsTrackerEvent()     {}
-func (TrackerAnnounceSuccessful) IsTrackerEvent() {}
-func (TrackerScrapeSuccessful) IsTrackerEvent()   {}
+func (TrackerAdded) IsEvent()            {}
+func (TrackerRemoved) IsEvent()          {}
+func (TrackerAnnounced) IsEvent()        {}
+func (TrackerScraped) IsEvent()          {}
+func (TrackerAdded) IsTrackerEvent()     {}
+func (TrackerRemoved) IsTrackerEvent()   {}
+func (TrackerScraped) IsTrackerEvent()   {}
+func (TrackerAnnounced) IsTrackerEvent() {}

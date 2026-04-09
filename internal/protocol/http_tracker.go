@@ -102,22 +102,22 @@ func (t *HttpTracker) sendScrape(req TrackerScrapeRequest) {
 	}
 
 	if err != nil {
-		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 		return
 	}
 	content, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 		return
 	}
 	res := TrackerScrapeResponse{}
 	err = res.DeserializeHttp(t, content, req)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 		return
 	}
 
-	t.torrent.SignalEvent(TrackerScrapeSuccessful{t, res})
+	t.torrent.SignalEvent(TrackerScraped{t, res, nil})
 }
 
 func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
@@ -139,23 +139,23 @@ func (t *HttpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 	}
 
 	if err != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 		return
 	}
 	content, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 		return
 	}
 	res := TrackerAnnounceResponse{}
 	err = res.DeserializeHttp(content)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 		return
 	}
 	if res.Failure != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, fmt.Errorf("tracker failure string -> %v", *res.Failure)})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, fmt.Errorf("tracker failure string -> %v", *res.Failure)})
 		return
 	}
-	t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, res})
+	t.torrent.SignalEvent(TrackerAnnounced{t, res, nil})
 }

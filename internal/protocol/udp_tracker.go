@@ -75,7 +75,7 @@ func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 	buf := req.SerializeUdp(t, transactionId)
 	err := utils.WriteFullUDP(t.sock, t.addr, buf)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 		return
 	}
 	ch := make(chan []byte, 1)
@@ -91,17 +91,17 @@ func (t *UdpTracker) sendAnnounce(req TrackerAnnounceRequest) {
 					err = res.DeserializeUdp(t, readBuf)
 
 					if err != nil {
-						t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+						t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 						return
 					}
-					t.torrent.SignalEvent(TrackerAnnounceSuccessful{t, res})
+					t.torrent.SignalEvent(TrackerAnnounced{t, res, nil})
 					return
 				}
 			case <-time.After(time.Second * time.Duration(15*math.Pow(2, retransmissions))):
 				{
 					err := utils.WriteFullUDP(t.sock, t.addr, buf)
 					if err != nil {
-						t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+						t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 						return
 					}
 
@@ -125,7 +125,7 @@ func (t *UdpTracker) connect() bool {
 
 	err := utils.WriteFullUDP(t.sock, t.addr, buf)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+		t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 		return false
 	}
 	ch := make(chan []byte, 1)
@@ -148,7 +148,7 @@ func (t *UdpTracker) connect() bool {
 				case byte(ERROR):
 					{
 						err := fmt.Errorf("error in tracker response: %v", string(readBuf[8:]))
-						t.torrent.SignalEvent(TrackerAnnounceFailed{t, err})
+						t.torrent.SignalEvent(TrackerAnnounced{t, TrackerAnnounceResponse{}, err})
 						return false
 					}
 				}
@@ -181,7 +181,7 @@ func (t *UdpTracker) sendScrape(req TrackerScrapeRequest) {
 	buf := req.SerializeUdp(t, transactionId)
 	err := utils.WriteFullUDP(t.sock, t.addr, buf)
 	if err != nil {
-		t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+		t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 		return
 	}
 	ch := make(chan []byte, 1)
@@ -196,17 +196,17 @@ func (t *UdpTracker) sendScrape(req TrackerScrapeRequest) {
 					res := TrackerScrapeResponse{}
 					err = res.DeserializeUdp(t, req, readBuf)
 					if err != nil {
-						t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+						t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 						return
 					}
-					t.torrent.SignalEvent(TrackerScrapeSuccessful{t, res})
+					t.torrent.SignalEvent(TrackerScraped{t, res, nil})
 					return
 				}
 			case <-time.After(time.Second * time.Duration(15*math.Pow(2, retransmissions))):
 				{
 					err := utils.WriteFullUDP(t.sock, t.addr, buf)
 					if err != nil {
-						t.torrent.SignalEvent(TrackerScrapeFailed{t, err})
+						t.torrent.SignalEvent(TrackerScraped{t, TrackerScrapeResponse{}, err})
 						return
 					}
 
